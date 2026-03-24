@@ -42,7 +42,7 @@ dotnet restore
 dotnet run --project src/CIS-Phase2-Crowdsourced-Ideation
 ```
 
-Swagger (Development only): `http://localhost:5080/swagger` (see `launchSettings.json` for the current ports).
+Swagger (Development only): `http://localhost:5257/swagger` (see `launchSettings.json` for the current ports).
 
 ## How To Generate Test Coverage Report
 1. Run tests and collect coverage:
