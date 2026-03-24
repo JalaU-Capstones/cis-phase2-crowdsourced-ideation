@@ -1,0 +1,42 @@
+# See https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
+
+## Build results
+**/bin/
+**/obj/
+
+## User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Visual Studio / Rider
+.vs/
+.idea/
+*.csproj.user
+*.DotSettings.user
+
+## OS files
+.DS_Store
+Thumbs.db
+
+## NuGet
+**/packages/
+.nuget/
+**/*.nupkg
+**/*.snupkg
+
+## Logs
+*.log
+
+## Test results / coverage
+**/TestResults/
+**/*.trx
+**/coverage/
+**/coverage-report/
+**/coverage.cobertura.xml
+**/coverage.opencover.xml
+
+## Tools
+**/.config/dotnet-tools.json
+

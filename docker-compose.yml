@@ -1,0 +1,26 @@
+# Docker Compose configuration for local MySQL database
+# Matches legacy schema exactly - no changes allowed (R3)
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: cis-mysql-phase1
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: sd5
+      MYSQL_DATABASE: sd3
+      MYSQL_USER: sd3user
+      MYSQL_PASSWORD: sd3pass
+    ports:
+      - "3307:3306" # Maps host 3307 to container 3306 (matches legacy config)
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql # Auto-runs schema creation
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql-data:
+

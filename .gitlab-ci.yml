@@ -1,0 +1,53 @@
+# .gitlab-ci.yml
+# Use .NET 8 SDK as the default for all jobs.
+image: mcr.microsoft.com/dotnet/sdk:8.0
+
+# Defines the stages for the CI/CD pipeline.
+# For now, we only have a 'test' stage.
+stages:
+  - test
+
+# Defines a cache to speed up subsequent pipeline runs by reusing downloaded dependencies.
+# The cache is invalidated and re-uploaded if the project files change.
+cache:
+  key:
+    files:
+      - global.json
+      - CIS-Phase2-Crowdsourced-Ideation.sln
+      - src/CIS-Phase2-Crowdsourced-Ideation/CIS-Phase2-Crowdsourced-Ideation.csproj
+      - test/CIS-Phase2-Crowdsourced-Ideation.Tests/CIS-Phase2-Crowdsourced-Ideation.Tests.csproj
+  paths:
+    - .nuget/packages/
+
+# This is the job that runs our tests.
+dotnet-test:
+  # Assigns this job to the 'test' stage.
+  stage: test
+  variables:
+    NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget/packages"
+  # The script that will be executed by the runner.
+  # It restores and runs all tests.
+  script:
+    - dotnet --info
+    - dotnet restore
+    - mkdir -p test/CIS-Phase2-Crowdsourced-Ideation.Tests/TestResults
+    - dotnet test --configuration Release --no-restore --logger "junit;LogFilePath=test/CIS-Phase2-Crowdsourced-Ideation.Tests/TestResults/TEST-results.xml"
+  # Defines artifacts to be saved after the job completes.
+  artifacts:
+    # We always save the test reports, even if the job fails, to allow for inspection.
+    when: always
+    # Specifies the path to the test reports.
+    paths:
+      - test/CIS-Phase2-Crowdsourced-Ideation.Tests/TestResults/
+    # Sets an expiration date for the artifacts to save storage space.
+    expire_in: 1 week
+    # Allows GitLab to parse the JUnit report format for display in the UI (e.g., in Merge Requests).
+    reports:
+      junit:
+        - test/CIS-Phase2-Crowdsourced-Ideation.Tests/TestResults/TEST-*.xml
+  # Defines the rules for when this job should run.
+  rules:
+    # Rule 1: Run this job on any push to the 'main' branch.
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    # Rule 2: Run this job for any merge request event targeting the 'main' branch.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
