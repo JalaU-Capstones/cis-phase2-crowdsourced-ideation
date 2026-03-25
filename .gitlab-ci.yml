@@ -13,9 +13,7 @@ cache:
   key:
     files:
       - global.json
-      - CIS-Phase2-Crowdsourced-Ideation.sln
       - src/CIS-Phase2-Crowdsourced-Ideation/CIS-Phase2-Crowdsourced-Ideation.csproj
-      - test/CIS-Phase2-Crowdsourced-Ideation.Tests/CIS-Phase2-Crowdsourced-Ideation.Tests.csproj
   paths:
     - .nuget/packages/
 
