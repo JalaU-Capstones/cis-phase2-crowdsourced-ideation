@@ -1,9 +1,14 @@
+using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using Microsoft.EntityFrameworkCore;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 
-// EF Core is wired and ready. Entities and mappings will be added per feature slices.
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
-}
+    public DbSet<Topic> Topics => Set<Topic>();
 
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+    }
+}
