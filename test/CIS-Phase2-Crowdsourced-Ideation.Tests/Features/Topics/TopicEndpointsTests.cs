@@ -83,4 +83,46 @@ public class TopicEndpointsTests
 
         result.Result.Should().BeOfType<NotFound>();
     }
+
+    // POST /topics
+    [Fact]
+    public async Task CreateTopic_ReturnsCreated_WhenDataIsValid()
+    {
+        var db = CreateInMemoryDb();
+        var userId = Guid.NewGuid().ToString();
+        var request = new CreateTopicRequest("New Topic", "Some description");
+        var user = TestHelpers.CreateClaimsPrincipal(userId);
+
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
+
+        var created = result.Result.Should().BeOfType<Created<TopicResponse>>().Subject;
+        created.Value!.Title.Should().Be("New Topic");
+        created.Value.Description.Should().Be("Some description");
+        created.Value.Status.Should().Be("OPEN");
+        created.Value.CreatedBy.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task CreateTopic_ReturnsBadRequest_WhenTitleIsEmpty()
+    {
+        var db = CreateInMemoryDb();
+        var request = new CreateTopicRequest("", null);
+        var user = TestHelpers.CreateClaimsPrincipal(Guid.NewGuid().ToString());
+
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
+
+        result.Result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task CreateTopic_ReturnsBadRequest_WhenTitleExceedsMaxLength()
+    {
+        var db = CreateInMemoryDb();
+        var request = new CreateTopicRequest(new string('A', 201), null);
+        var user = TestHelpers.CreateClaimsPrincipal(Guid.NewGuid().ToString());
+
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
+
+        result.Result.Should().BeOfType<BadRequest<object>>();
+    }
 }
