@@ -70,11 +70,10 @@ public class TopicEndpointsTests
 
         var result = await TopicEndpoints.HandleGetTopicById(id, db);
 
-        var ok = result.Should().BeOfType<Ok<TopicResponse>>().Subject;
+        var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
         ok.Value!.Id.Should().Be(id);
         ok.Value.Title.Should().Be("Topic B");
     }
-
     [Fact]
     public async Task GetTopicById_ReturnsNotFound_WhenTopicDoesNotExist()
     {
@@ -82,6 +81,6 @@ public class TopicEndpointsTests
 
         var result = await TopicEndpoints.HandleGetTopicById(Guid.NewGuid().ToString(), db);
 
-        result.Should().BeOfType<NotFound>();
+        result.Result.Should().BeOfType<NotFound>();
     }
 }
