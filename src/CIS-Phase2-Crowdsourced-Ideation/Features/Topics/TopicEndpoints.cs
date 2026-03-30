@@ -15,6 +15,7 @@ public static class TopicEndpoints
         group.MapGet("/{id}", HandleGetTopicById);
         group.MapPost("/", HandleCreateTopic);
         group.MapPut("/{id}", HandleUpdateTopic);
+        group.MapDelete("/{id}", HandleDeleteTopic);
 
         return endpoints;
     }
@@ -80,6 +81,16 @@ public static class TopicEndpoints
 
         await db.SaveChangesAsync();
         return TypedResults.Ok(ToResponse(topic));
+    }
+
+    public static async Task<Results<NoContent, NotFound>> HandleDeleteTopic(string id, AppDbContext db)
+    {
+        var topic = await db.Topics.FindAsync(id);
+        if (topic is null) return TypedResults.NotFound();
+
+        db.Topics.Remove(topic);
+        await db.SaveChangesAsync();
+        return TypedResults.NoContent();
     }
 
     internal static TopicResponse ToResponse(Topic t) =>
