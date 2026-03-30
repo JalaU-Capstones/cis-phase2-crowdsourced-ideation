@@ -125,4 +125,85 @@ public class TopicEndpointsTests
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
+
+    // PUT /topics/{id}
+    [Fact]
+    public async Task UpdateTopic_ReturnsOk_WhenDataIsValid()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Old Title",
+            Status = TopicStatus.OPEN,
+            CreatedBy = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var request = new UpdateTopicRequest("New Title", "New Desc", "CLOSED");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, db);
+
+        var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
+        ok.Value!.Title.Should().Be("New Title");
+        ok.Value.Description.Should().Be("New Desc");
+        ok.Value.Status.Should().Be("CLOSED");
+    }
+
+    [Fact]
+    public async Task UpdateTopic_ReturnsNotFound_WhenTopicDoesNotExist()
+    {
+        var db = CreateInMemoryDb();
+        var request = new UpdateTopicRequest("Title", null, "OPEN");
+
+        var result = await TopicEndpoints.HandleUpdateTopic(Guid.NewGuid().ToString(), request, db);
+
+        result.Result.Should().BeOfType<NotFound>();
+    }
+
+    [Fact]
+    public async Task UpdateTopic_ReturnsBadRequest_WhenTitleIsEmpty()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Title",
+            Status = TopicStatus.OPEN,
+            CreatedBy = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var request = new UpdateTopicRequest("", null, "OPEN");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, db);
+
+        result.Result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task UpdateTopic_ReturnsBadRequest_WhenStatusIsInvalid()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Title",
+            Status = TopicStatus.OPEN,
+            CreatedBy = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var request = new UpdateTopicRequest("Title", null, "INVALID");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, db);
+
+        result.Result.Should().BeOfType<BadRequest<object>>();
+    }
 }
