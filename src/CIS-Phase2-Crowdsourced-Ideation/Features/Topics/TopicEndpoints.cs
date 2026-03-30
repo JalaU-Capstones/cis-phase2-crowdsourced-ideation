@@ -14,6 +14,7 @@ public static class TopicEndpoints
         group.MapGet("/", HandleGetAllTopics);
         group.MapGet("/{id}", HandleGetTopicById);
         group.MapPost("/", HandleCreateTopic);
+        group.MapPut("/{id}", HandleUpdateTopic);
 
         return endpoints;
     }
@@ -57,6 +58,28 @@ public static class TopicEndpoints
         await db.SaveChangesAsync();
 
         return TypedResults.Created($"/topics/{topic.Id}", ToResponse(topic));
+    }
+    public static async Task<Results<Ok<TopicResponse>, NotFound, BadRequest<object>>> HandleUpdateTopic(
+    string id,
+        UpdateTopicRequest request,
+        AppDbContext db)
+    {
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
+            return TypedResults.BadRequest<object>(new { error = "Title is required and must be at most 200 characters." });
+
+        if (!Enum.TryParse<TopicStatus>(request.Status, ignoreCase: true, out var parsedStatus))
+            return TypedResults.BadRequest<object>(new { error = "Status must be 'OPEN' or 'CLOSED'." });
+
+        var topic = await db.Topics.FindAsync(id);
+        if (topic is null) return TypedResults.NotFound();
+
+        topic.Title = request.Title.Trim();
+        topic.Description = request.Description?.Trim();
+        topic.Status = parsedStatus;
+        topic.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        return TypedResults.Ok(ToResponse(topic));
     }
 
     internal static TopicResponse ToResponse(Topic t) =>
