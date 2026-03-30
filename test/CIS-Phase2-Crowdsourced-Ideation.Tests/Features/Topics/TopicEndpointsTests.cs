@@ -206,4 +206,36 @@ public class TopicEndpointsTests
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
+
+    // DELETE /topics/{id}
+    [Fact]
+    public async Task DeleteTopic_ReturnsNoContent_WhenTopicExists()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Topic to delete",
+            Status = TopicStatus.OPEN,
+            CreatedBy = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleDeleteTopic(id, db);
+
+        result.Result.Should().BeOfType<NoContent>();
+    }
+
+    [Fact]
+    public async Task DeleteTopic_ReturnsNotFound_WhenTopicDoesNotExist()
+    {
+        var db = CreateInMemoryDb();
+
+        var result = await TopicEndpoints.HandleDeleteTopic(Guid.NewGuid().ToString(), db);
+
+        result.Result.Should().BeOfType<NotFound>();
+    }
 }
