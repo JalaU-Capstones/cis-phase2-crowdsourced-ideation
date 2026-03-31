@@ -1,0 +1,708 @@
+openapi: 3.0.3
+info:
+  title: CIS Phase2 - Crowdsourced Ideation API
+  description: |
+    API completa para sistema de lluvia de ideas colaborativa con votación.
+    Permite crear temas, publicar ideas y votar por ellas.
+    
+    **Reglas de negocio:**
+    - Un usuario puede votar una sola vez por idea (voto único)
+    - Los votos solo pueden realizarse cuando el tema está OPEN
+    - Los usuarios pueden cambiar/remover su voto mientras el tema está OPEN
+    - Al cerrar un tema (CLOSED), se puede determinar la idea ganadora
+  version: 2.0.0
+  contact:
+    name: Equipo CIS Phase2
+  license:
+    name: MIT
+
+servers:
+  - url: https://localhost:5001
+    description: Servidor de desarrollo
+  - url: https://api.cis-phase2.com/v1
+    description: Producción
+
+tags:
+  - name: Topics
+    description: Gestión de temas de ideación
+  - name: Ideas
+    description: Gestión de ideas dentro de temas
+  - name: Votes
+    description: Votación de ideas
+
+# ========================
+# COMPONENTES REUTILIZABLES
+# ========================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtenido del endpoint de autenticación
+
+  parameters:
+    TopicId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: ID del tema
+      example: "550e8400-e29b-41d4-a716-446655440000"
+    
+    TopicIdParam:
+      name: topicId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: ID del tema
+      example: "550e8400-e29b-41d4-a716-446655440000"
+    
+    IdeaId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: ID de la idea
+      example: "660e8400-e29b-41d4-a716-446655440000"
+
+  responses:
+    BadRequest:
+      description: Datos inválidos o violación de reglas de negocio
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    
+    Unauthorized:
+      description: Token JWT faltante, inválido o expirado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    # ----- Error Responses -----
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          example: "Validation error message"
+      additionalProperties: false
+
+    # ----- Topic Models -----
+    TopicStatus:
+      type: string
+      enum:
+        - OPEN
+        - CLOSED
+      description: |
+        - OPEN: Se pueden crear ideas y votar
+        - CLOSED: No se aceptan más ideas/votos, se puede determinar ganador
+      example: OPEN
+
+    TopicResponse:
+      type: object
+      required:
+        - id
+        - title
+        - status
+        - createdBy
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        title:
+          type: string
+          maxLength: 200
+          example: "Mejoras para el dashboard"
+        description:
+          type: string
+          nullable: true
+          example: "Propuestas para optimizar la interfaz"
+        status:
+          $ref: '#/components/schemas/TopicStatus'
+        createdBy:
+          type: string
+          format: uuid
+          description: ID del usuario creador
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-03-30T10:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-03-30T15:30:00Z"
+
+    CreateTopicRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Nuevas funcionalidades móviles"
+        description:
+          type: string
+          nullable: true
+          example: "Comparte ideas sobre la app móvil"
+      additionalProperties: false
+
+    UpdateTopicRequest:
+      type: object
+      required:
+        - title
+        - status
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: "Nuevas funcionalidades móviles - Actualizado"
+        description:
+          type: string
+          nullable: true
+          example: "Enfoque en UX/UI"
+        status:
+          $ref: '#/components/schemas/TopicStatus'
+      additionalProperties: false
+
+    # ----- Idea Models -----
+    IdeaResponse:
+      type: object
+      required:
+        - id
+        - content
+        - topicId
+        - createdBy
+        - createdAt
+        - updatedAt
+        - voteCount
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "660e8400-e29b-41d4-a716-446655440000"
+        content:
+          type: string
+          description: Contenido/descripción de la idea
+          example: "Implementar dark mode en toda la aplicación"
+        topicId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        createdBy:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-03-30T11:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-03-30T11:30:00Z"
+        voteCount:
+          type: integer
+          minimum: 0
+          description: Número total de votos recibidos
+          example: 15
+
+    CreateIdeaRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          example: "Propuesta para mejorar el rendimiento del login"
+      additionalProperties: false
+
+    UpdateIdeaRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          example: "Propuesta actualizada para el login con 2FA"
+      additionalProperties: false
+
+    # ----- Vote Models -----
+    VoteResponse:
+      type: object
+      required:
+        - id
+        - ideaId
+        - userId
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "770e8400-e29b-41d4-a716-446655440000"
+        ideaId:
+          type: string
+          format: uuid
+          example: "660e8400-e29b-41d4-a716-446655440000"
+        userId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440001"
+
+    VoteCountResponse:
+      type: object
+      required:
+        - ideaId
+        - voteCount
+      properties:
+        ideaId:
+          type: string
+          format: uuid
+        voteCount:
+          type: integer
+          example: 42
+
+    WinningIdeaResponse:
+      type: object
+      properties:
+        topicId:
+          type: string
+          format: uuid
+        idea:
+          $ref: '#/components/schemas/IdeaResponse'
+        totalVotes:
+          type: integer
+        message:
+          type: string
+          example: "Idea ganadora con 127 votos"
+
+# ========================
+# PATHS (ENDPOINTS)
+# ========================
+paths:
+  # ----- TOPICS -----
+  /topics:
+    get:
+      tags:
+        - Topics
+      summary: Listar todos los temas
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de temas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TopicResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Topics
+      summary: Crear nuevo tema
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTopicRequest'
+      responses:
+        '201':
+          description: Tema creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /topics/{id}:
+    get:
+      tags:
+        - Topics
+      summary: Obtener tema por ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TopicId'
+      responses:
+        '200':
+          description: Tema encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Topics
+      summary: Actualizar tema
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TopicId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTopicRequest'
+      responses:
+        '200':
+          description: Tema actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Topics
+      summary: Eliminar tema (cascada: elimina ideas y votos)
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TopicId'
+      responses:
+        '204':
+          description: Tema eliminado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /topics/{topicId}/winner:
+    get:
+      tags:
+        - Topics
+      summary: Obtener idea ganadora del tema
+      description: Solo aplicable cuando el tema está CLOSED
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TopicIdParam'
+      responses:
+        '200':
+          description: Idea ganadora
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WinningIdeaResponse'
+        '400':
+          description: Tema aún OPEN o sin ideas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ----- IDEAS -----
+  /topics/{topicId}/ideas:
+    get:
+      tags:
+        - Ideas
+      summary: Listar ideas de un tema
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TopicIdParam'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum:
+              - votes
+              - newest
+              - oldest
+            default: votes
+          description: Ordenar por votos o fecha
+      responses:
+        '200':
+          description: Lista de ideas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IdeaResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Ideas
+      summary: Crear nueva idea en un tema
+      description: Solo permite crear si el tema está OPEN
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TopicIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIdeaRequest'
+      responses:
+        '201':
+          description: Idea creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdeaResponse'
+        '400':
+          description: Tema cerrado o datos inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /ideas/{id}:
+    get:
+      tags:
+        - Ideas
+      summary: Obtener idea por ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdeaId'
+      responses:
+        '200':
+          description: Idea encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdeaResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Ideas
+      summary: Actualizar idea
+      description: Solo el autor puede actualizar
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdeaId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIdeaRequest'
+      responses:
+        '200':
+          description: Idea actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdeaResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No autorizado (no eres el creador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Ideas
+      summary: Eliminar idea (cascada: elimina votos)
+      description: Solo el autor puede eliminar
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdeaId'
+      responses:
+        '204':
+          description: Idea eliminada
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No autorizado
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ----- VOTES -----
+  /ideas/{ideaId}/votes:
+    get:
+      tags:
+        - Votes
+      summary: Contar votos de una idea
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: ideaId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la idea
+          example: "660e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Conteo de votos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteCountResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      tags:
+        - Votes
+      summary: Votar por una idea
+      description: |
+        - Solo permite si el tema está OPEN
+        - Si ya votaste, actualiza el voto (PUT implícito)
+        - Voto único por usuario por idea
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: ideaId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la idea
+          example: "660e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '201':
+          description: Voto registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteResponse'
+        '400':
+          description: Tema cerrado o ya votaste (usa PUT para actualizar)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - Votes
+      summary: Remover mi voto de una idea
+      description: Solo permite si el tema está OPEN
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: ideaId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la idea
+          example: "660e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '204':
+          description: Voto removido
+        '400':
+          description: Tema cerrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Voto no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/me/votes:
+    get:
+      tags:
+        - Votes
+      summary: Obtener mis votos
+      description: Lista todas las ideas que ha votado el usuario autenticado
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Mis votos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VoteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
