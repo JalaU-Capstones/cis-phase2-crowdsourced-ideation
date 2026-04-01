@@ -32,27 +32,35 @@ public static class TopicEndpoints
         return topic is null ? TypedResults.NotFound() : TypedResults.Ok(ToResponse(topic));
     }
 
-    public static async Task<Results<Created<TopicResponse>, BadRequest<object>>> HandleCreateTopic(
+    public static async Task<Results<Created<TopicResponse>, BadRequest<object>, UnauthorizedHttpResult>> HandleCreateTopic(
         CreateTopicRequest request,
         ClaimsPrincipal user,
         AppDbContext db)
     {
         if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
-            return TypedResults.BadRequest<object>(new { error = "Title is required and must be at most 200 characters." });
+            return TypedResults.BadRequest<object>(
+                new { error = "Title is required and must be at most 200 characters." });
 
-        var userId = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId is null)
-            return TypedResults.BadRequest<object>(new { error = "User identity not found." });
+        var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (login is null)
+            return TypedResults.BadRequest<object>(new { error = "User identity not found in token." });
+
+        var userRecord = await db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Login == login);
+
+        if (userRecord is null)
+            return TypedResults.Unauthorized(); 
 
         var topic = new Topic
         {
-            Id = Guid.NewGuid().ToString(),
-            Title = request.Title.Trim(),
+            Id          = Guid.NewGuid().ToString(),
+            Title       = request.Title.Trim(),
             Description = request.Description?.Trim(),
-            Status = TopicStatus.OPEN,
-            CreatedBy = userId,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            Status      = TopicStatus.OPEN,
+            CreatedBy   = userRecord.Id,   
+            CreatedAt   = DateTime.UtcNow,
+            UpdatedAt   = DateTime.UtcNow
         };
 
         db.Topics.Add(topic);
