@@ -22,10 +22,14 @@ public static class TestHelpers
         var signingKey  = new SymmetricSecurityKey(keyBytes);
         var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
 
+        var now = DateTime.UtcNow;
+
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject            = new ClaimsIdentity(new[] { new Claim("sub", username) }),
-            Expires            = DateTime.UtcNow.AddMinutes(expiresInMinutes),
+            NotBefore          = now.AddMinutes(Math.Min(expiresInMinutes, 0)) .AddMinutes(-1),
+            Expires            = now.AddMinutes(expiresInMinutes),
+            IssuedAt           = now.AddMinutes(Math.Min(expiresInMinutes, 0)).AddMinutes(-1),
             SigningCredentials = credentials
         };
 
