@@ -2,36 +2,36 @@ openapi: 3.0.3
 info:
   title: CIS Phase2 - Crowdsourced Ideation API
   description: |
-    API completa para sistema de lluvia de ideas colaborativa con votación.
-    Permite crear temas, publicar ideas y votar por ellas.
+    Complete API for collaborative brainstorming system with voting capabilities.
+    Enables creating topics, publishing ideas, and voting on them.
     
-    **Reglas de negocio:**
-    - Un usuario puede votar una sola vez por idea (voto único)
-    - Los votos solo pueden realizarse cuando el tema está OPEN
-    - Los usuarios pueden cambiar/remover su voto mientras el tema está OPEN
-    - Al cerrar un tema (CLOSED), se puede determinar la idea ganadora
+    **Business Rules:**
+    - A user can vote only once per idea (unique vote)
+    - Votes can only be cast when the topic is OPEN
+    - Users can change/remove their vote while the topic is OPEN
+    - When a topic is CLOSED, the winning idea can be determined
   version: 2.0.0
   contact:
-    name: Equipo CIS Phase2
+    name: CIS Phase2 Team
   license:
     name: MIT
 
 servers:
   - url: https://localhost:5001
-    description: Servidor de desarrollo
+    description: Development server
   - url: https://api.cis-phase2.com/v1
-    description: Producción
+    description: Production server
 
 tags:
   - name: Topics
-    description: Gestión de temas de ideación
+    description: Topic management for ideation sessions
   - name: Ideas
-    description: Gestión de ideas dentro de temas
+    description: Idea management within topics
   - name: Votes
-    description: Votación de ideas
+    description: Idea voting operations
 
 # ========================
-# COMPONENTES REUTILIZABLES
+# REUSABLE COMPONENTS
 # ========================
 components:
   securitySchemes:
@@ -39,7 +39,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Token JWT obtenido del endpoint de autenticación
+      description: JWT token obtained from authentication endpoint
 
   parameters:
     TopicId:
@@ -49,7 +49,7 @@ components:
       schema:
         type: string
         format: uuid
-      description: ID del tema
+      description: Topic ID
       example: "550e8400-e29b-41d4-a716-446655440000"
     
     TopicIdParam:
@@ -59,7 +59,7 @@ components:
       schema:
         type: string
         format: uuid
-      description: ID del tema
+      description: Topic ID
       example: "550e8400-e29b-41d4-a716-446655440000"
     
     IdeaId:
@@ -69,26 +69,26 @@ components:
       schema:
         type: string
         format: uuid
-      description: ID de la idea
+      description: Idea ID
       example: "660e8400-e29b-41d4-a716-446655440000"
 
   responses:
     BadRequest:
-      description: Datos inválidos o violación de reglas de negocio
+      description: Invalid data or business rule violation
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     
     Unauthorized:
-      description: Token JWT faltante, inválido o expirado
+      description: Missing, invalid, or expired JWT token
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     
     NotFound:
-      description: Recurso no encontrado
+      description: Resource not found
       content:
         application/json:
           schema:
@@ -113,8 +113,8 @@ components:
         - OPEN
         - CLOSED
       description: |
-        - OPEN: Se pueden crear ideas y votar
-        - CLOSED: No se aceptan más ideas/votos, se puede determinar ganador
+        - OPEN: Ideas can be created and votes can be cast
+        - CLOSED: No more ideas/votes accepted, winner can be determined
       example: OPEN
 
     TopicResponse:
@@ -134,17 +134,17 @@ components:
         title:
           type: string
           maxLength: 200
-          example: "Mejoras para el dashboard"
+          example: "Dashboard improvements"
         description:
           type: string
           nullable: true
-          example: "Propuestas para optimizar la interfaz"
+          example: "Proposals to optimize the interface"
         status:
           $ref: '#/components/schemas/TopicStatus'
         createdBy:
           type: string
           format: uuid
-          description: ID del usuario creador
+          description: Creator user ID
           example: "550e8400-e29b-41d4-a716-446655440001"
         createdAt:
           type: string
@@ -164,11 +164,11 @@ components:
           type: string
           minLength: 1
           maxLength: 200
-          example: "Nuevas funcionalidades móviles"
+          example: "New mobile features"
         description:
           type: string
           nullable: true
-          example: "Comparte ideas sobre la app móvil"
+          example: "Share ideas about the mobile app"
       additionalProperties: false
 
     UpdateTopicRequest:
@@ -181,11 +181,11 @@ components:
           type: string
           minLength: 1
           maxLength: 200
-          example: "Nuevas funcionalidades móviles - Actualizado"
+          example: "New mobile features - Updated"
         description:
           type: string
           nullable: true
-          example: "Enfoque en UX/UI"
+          example: "Focus on UX/UI"
         status:
           $ref: '#/components/schemas/TopicStatus'
       additionalProperties: false
@@ -208,8 +208,8 @@ components:
           example: "660e8400-e29b-41d4-a716-446655440000"
         content:
           type: string
-          description: Contenido/descripción de la idea
-          example: "Implementar dark mode en toda la aplicación"
+          description: Idea content/description
+          example: "Implement dark mode across the entire application"
         topicId:
           type: string
           format: uuid
@@ -229,7 +229,7 @@ components:
         voteCount:
           type: integer
           minimum: 0
-          description: Número total de votos recibidos
+          description: Total number of votes received
           example: 15
 
     CreateIdeaRequest:
@@ -241,7 +241,7 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
-          example: "Propuesta para mejorar el rendimiento del login"
+          example: "Proposal to improve login performance"
       additionalProperties: false
 
     UpdateIdeaRequest:
@@ -253,7 +253,7 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
-          example: "Propuesta actualizada para el login con 2FA"
+          example: "Updated proposal for login with 2FA"
       additionalProperties: false
 
     # ----- Vote Models -----
@@ -302,7 +302,7 @@ components:
           type: integer
         message:
           type: string
-          example: "Idea ganadora con 127 votos"
+          example: "Winning idea with 127 votes"
 
 # ========================
 # PATHS (ENDPOINTS)
@@ -313,12 +313,12 @@ paths:
     get:
       tags:
         - Topics
-      summary: Listar todos los temas
+      summary: List all topics
       security:
         - BearerAuth: []
       responses:
         '200':
-          description: Lista de temas
+          description: List of topics
           content:
             application/json:
               schema:
@@ -331,7 +331,7 @@ paths:
     post:
       tags:
         - Topics
-      summary: Crear nuevo tema
+      summary: Create new topic
       security:
         - BearerAuth: []
       requestBody:
@@ -342,7 +342,7 @@ paths:
               $ref: '#/components/schemas/CreateTopicRequest'
       responses:
         '201':
-          description: Tema creado
+          description: Topic created
           content:
             application/json:
               schema:
@@ -356,14 +356,14 @@ paths:
     get:
       tags:
         - Topics
-      summary: Obtener tema por ID
+      summary: Get topic by ID
       security:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/TopicId'
       responses:
         '200':
-          description: Tema encontrado
+          description: Topic found
           content:
             application/json:
               schema:
@@ -376,7 +376,7 @@ paths:
     put:
       tags:
         - Topics
-      summary: Actualizar tema
+      summary: Update topic
       security:
         - BearerAuth: []
       parameters:
@@ -389,7 +389,7 @@ paths:
               $ref: '#/components/schemas/UpdateTopicRequest'
       responses:
         '200':
-          description: Tema actualizado
+          description: Topic updated
           content:
             application/json:
               schema:
@@ -404,14 +404,14 @@ paths:
     delete:
       tags:
         - Topics
-      summary: Eliminar tema (cascada: elimina ideas y votos)
+      summary: Delete topic (cascade: deletes ideas and votes)
       security:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/TopicId'
       responses:
         '204':
-          description: Tema eliminado
+          description: Topic deleted
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -421,21 +421,21 @@ paths:
     get:
       tags:
         - Topics
-      summary: Obtener idea ganadora del tema
-      description: Solo aplicable cuando el tema está CLOSED
+      summary: Get winning idea for topic
+      description: Only applicable when topic is CLOSED
       security:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/TopicIdParam'
       responses:
         '200':
-          description: Idea ganadora
+          description: Winning idea
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/WinningIdeaResponse'
         '400':
-          description: Tema aún OPEN o sin ideas
+          description: Topic still OPEN or no ideas
           content:
             application/json:
               schema:
@@ -450,7 +450,7 @@ paths:
     get:
       tags:
         - Ideas
-      summary: Listar ideas de un tema
+      summary: List ideas for a topic
       security:
         - BearerAuth: []
       parameters:
@@ -464,10 +464,10 @@ paths:
               - newest
               - oldest
             default: votes
-          description: Ordenar por votos o fecha
+          description: Sort by votes or date
       responses:
         '200':
-          description: Lista de ideas
+          description: List of ideas
           content:
             application/json:
               schema:
@@ -482,8 +482,8 @@ paths:
     post:
       tags:
         - Ideas
-      summary: Crear nueva idea en un tema
-      description: Solo permite crear si el tema está OPEN
+      summary: Create new idea in a topic
+      description: Only allowed when topic is OPEN
       security:
         - BearerAuth: []
       parameters:
@@ -496,13 +496,13 @@ paths:
               $ref: '#/components/schemas/CreateIdeaRequest'
       responses:
         '201':
-          description: Idea creada
+          description: Idea created
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/IdeaResponse'
         '400':
-          description: Tema cerrado o datos inválidos
+          description: Topic closed or invalid data
           content:
             application/json:
               schema:
@@ -516,14 +516,14 @@ paths:
     get:
       tags:
         - Ideas
-      summary: Obtener idea por ID
+      summary: Get idea by ID
       security:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/IdeaId'
       responses:
         '200':
-          description: Idea encontrada
+          description: Idea found
           content:
             application/json:
               schema:
@@ -536,8 +536,8 @@ paths:
     put:
       tags:
         - Ideas
-      summary: Actualizar idea
-      description: Solo el autor puede actualizar
+      summary: Update idea
+      description: Only the author can update
       security:
         - BearerAuth: []
       parameters:
@@ -550,7 +550,7 @@ paths:
               $ref: '#/components/schemas/UpdateIdeaRequest'
       responses:
         '200':
-          description: Idea actualizada
+          description: Idea updated
           content:
             application/json:
               schema:
@@ -560,7 +560,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: No autorizado (no eres el creador)
+          description: Unauthorized (not the creator)
           content:
             application/json:
               schema:
@@ -571,19 +571,19 @@ paths:
     delete:
       tags:
         - Ideas
-      summary: Eliminar idea (cascada: elimina votos)
-      description: Solo el autor puede eliminar
+      summary: Delete idea (cascade: deletes votes)
+      description: Only the author can delete
       security:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/IdeaId'
       responses:
         '204':
-          description: Idea eliminada
+          description: Idea deleted
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: No autorizado
+          description: Unauthorized
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -592,7 +592,7 @@ paths:
     get:
       tags:
         - Votes
-      summary: Contar votos de una idea
+      summary: Count votes for an idea
       security:
         - BearerAuth: []
       parameters:
@@ -602,11 +602,11 @@ paths:
           schema:
             type: string
             format: uuid
-          description: ID de la idea
+          description: Idea ID
           example: "660e8400-e29b-41d4-a716-446655440000"
       responses:
         '200':
-          description: Conteo de votos
+          description: Vote count
           content:
             application/json:
               schema:
@@ -619,11 +619,11 @@ paths:
     post:
       tags:
         - Votes
-      summary: Votar por una idea
+      summary: Vote for an idea
       description: |
-        - Solo permite si el tema está OPEN
-        - Si ya votaste, actualiza el voto (PUT implícito)
-        - Voto único por usuario por idea
+        - Only allowed when topic is OPEN
+        - If you already voted, updates the vote (implicit PUT)
+        - One vote per user per idea
       security:
         - BearerAuth: []
       parameters:
@@ -633,17 +633,17 @@ paths:
           schema:
             type: string
             format: uuid
-          description: ID de la idea
+          description: Idea ID
           example: "660e8400-e29b-41d4-a716-446655440000"
       responses:
         '201':
-          description: Voto registrado
+          description: Vote recorded
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/VoteResponse'
         '400':
-          description: Tema cerrado o ya votaste (usa PUT para actualizar)
+          description: Topic closed or already voted (use PUT to update)
           content:
             application/json:
               schema:
@@ -656,8 +656,8 @@ paths:
     delete:
       tags:
         - Votes
-      summary: Remover mi voto de una idea
-      description: Solo permite si el tema está OPEN
+      summary: Remove my vote from an idea
+      description: Only allowed when topic is OPEN
       security:
         - BearerAuth: []
       parameters:
@@ -667,13 +667,13 @@ paths:
           schema:
             type: string
             format: uuid
-          description: ID de la idea
+          description: Idea ID
           example: "660e8400-e29b-41d4-a716-446655440000"
       responses:
         '204':
-          description: Voto removido
+          description: Vote removed
         '400':
-          description: Tema cerrado
+          description: Topic closed
           content:
             application/json:
               schema:
@@ -681,7 +681,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: Voto no encontrado
+          description: Vote not found
           content:
             application/json:
               schema:
@@ -691,13 +691,13 @@ paths:
     get:
       tags:
         - Votes
-      summary: Obtener mis votos
-      description: Lista todas las ideas que ha votado el usuario autenticado
+      summary: Get my votes
+      description: Lists all ideas that the authenticated user has voted for
       security:
         - BearerAuth: []
       responses:
         '200':
-          description: Mis votos
+          description: My votes
           content:
             application/json:
               schema:
