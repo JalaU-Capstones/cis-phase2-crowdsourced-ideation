@@ -3,6 +3,7 @@ using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Xunit;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Topics;
 
@@ -88,11 +89,20 @@ public class TopicEndpointsTests
     [Fact]
     public async Task CreateTopic_ReturnsCreated_WhenDataIsValid()
     {
-        var db = CreateInMemoryDb();
+        var db     = CreateInMemoryDb();
         var userId = Guid.NewGuid().ToString();
-        var request = new CreateTopicRequest("New Topic", "Some description");
-        var user = TestHelpers.CreateClaimsPrincipal(userId);
+        const string login = "testuser";
+        db.Users.Add(new UserRecord
+        {
+            Id       = userId,
+            Login    = login,
+            Name     = "Test User",
+            Password = "irrelevant-hash"
+        });
+        await db.SaveChangesAsync();
 
+        var request = new CreateTopicRequest("New Topic", "Some description");
+        var user    = TestHelpers.CreateClaimsPrincipal(login);
         var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
 
         var created = result.Result.Should().BeOfType<Created<TopicResponse>>().Subject;

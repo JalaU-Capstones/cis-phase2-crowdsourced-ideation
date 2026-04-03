@@ -19,3 +19,5 @@ app.UseAuthorization();
 app.MapFeatures();
 
 app.Run();
+
+public partial class Program { }
