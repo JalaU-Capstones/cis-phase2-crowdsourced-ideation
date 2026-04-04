@@ -29,12 +29,13 @@ public static class DependencyInjection
         services.AddDbContext<AppDbContext>(options =>
             options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
         
-        // The secret key from Phase 1 (Java/Spring Boot) is typically handled as a plain UTF-8 string.
+        // The secret key from Phase 1 (Java/Spring Boot) is expected to be a Base64 encoded string.
+        // The Java JwtService uses `Decoders.BASE64.decode(secretKey)`.
         var secretKey = configuration["Jwt:SecretKey"]
             ?? throw new InvalidOperationException("Jwt:SecretKey is not configured.");
 
-        // Use UTF8 bytes to match how Spring Boot's StandardCharsets.UTF_8.getBytes() works.
-        var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+        // Convert the Base64 string secret key to bytes.
+        var signingKey = new SymmetricSecurityKey(Convert.FromBase64String(secretKey));
 
         services
             .AddAuthentication(options =>
@@ -51,8 +52,8 @@ public static class DependencyInjection
                 {
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey         = signingKey,
-                    ValidateIssuer           = false, 
-                    ValidateAudience         = false,
+                    ValidateIssuer           = false, // Set to true if Phase 1 provides an issuer
+                    ValidateAudience         = false, // Set to true if Phase 1 provides an audience
                     ValidateLifetime         = true,
                     ClockSkew                = TimeSpan.Zero 
                 };

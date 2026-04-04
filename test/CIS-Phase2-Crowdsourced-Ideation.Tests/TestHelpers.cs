@@ -15,12 +15,12 @@ public static class TestHelpers
     }
     
     public static string GenerateJwtToken(
-        string secret,
+        string base64Secret, // Expecting a Base64 encoded secret for consistency with Java
         string username,
         int expiresInMinutes = 60)
     {
-        // Use UTF8 encoding to match the Infrastructure configuration
-        var signingKey  = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+        // Convert the Base64 string secret key to bytes.
+        var signingKey  = new SymmetricSecurityKey(Convert.FromBase64String(base64Secret));
         var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
 
         var now = DateTime.UtcNow;
