@@ -28,7 +28,7 @@ public sealed class Topic
     /// <summary>
     /// The identifier of the user who owns/created the topic.
     /// </summary>
-    public Guid OwnerId { get; set; }
+    public string OwnerId { get; set; } = string.Empty;
 
     /// <summary>
     /// The date and time when the topic was created (UTC).

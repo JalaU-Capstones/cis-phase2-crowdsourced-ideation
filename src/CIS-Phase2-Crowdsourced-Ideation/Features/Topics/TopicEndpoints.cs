@@ -72,25 +72,13 @@ public static class TopicEndpoints
         if (string.IsNullOrEmpty(userIdString))
             return TypedResults.BadRequest<object>(new { error = UserIdErrorMessage });
 
-        // Phase 1 User Management API uses usernames or strings as subject.
-        // If OwnerId in database is Guid, we need to handle it.
-        // For this fix, we assume we might need to parse it if it's a Guid string,
-        // but the error description says "owner can edit/delete" logic must remain.
-        Guid ownerId;
-        if (!Guid.TryParse(userIdString, out ownerId))
-        {
-             // Fallback or handle if sub is not a Guid (e.g. it's a username)
-             // For now, let's keep the Guid requirement if that's what the DB expects.
-             return TypedResults.BadRequest<object>(new { error = UserIdErrorMessage });
-        }
-
         var topic = new Topic
         {
             Id          = Guid.NewGuid().ToString(),
             Title       = request.Title.Trim(),
             Description = request.Description?.Trim(),
             Status      = TopicStatus.OPEN,
-            OwnerId     = ownerId,
+            OwnerId     = userIdString,
             CreatedAt   = DateTime.UtcNow,
             UpdatedAt   = DateTime.UtcNow
         };
@@ -120,7 +108,7 @@ public static class TopicEndpoints
         if (topic is null) return TypedResults.NotFound();
 
         var userIdString = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var currentUserId) || topic.OwnerId != currentUserId)
+        if (string.IsNullOrEmpty(userIdString) || topic.OwnerId != userIdString)
             return TypedResults.Forbid();
 
         topic.Title = request.Title.Trim();
@@ -144,7 +132,7 @@ public static class TopicEndpoints
         if (topic is null) return TypedResults.NotFound();
 
         var userIdString = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userIdString) || !Guid.TryParse(userIdString, out var currentUserId) || topic.OwnerId != currentUserId)
+        if (string.IsNullOrEmpty(userIdString) || topic.OwnerId != userIdString)
             return TypedResults.Forbid();
 
         db.Topics.Remove(topic);

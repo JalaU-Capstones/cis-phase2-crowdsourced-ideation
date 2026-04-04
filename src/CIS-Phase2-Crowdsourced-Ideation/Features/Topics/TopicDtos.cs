@@ -30,6 +30,6 @@ public sealed record TopicResponse(
     string Title,
     string? Description,
     string Status,
-    Guid OwnerId,
+    string OwnerId,
     DateTime CreatedAt,
     DateTime UpdatedAt);
