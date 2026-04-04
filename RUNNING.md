@@ -191,3 +191,17 @@ Open `coverage-report/index.html` to view the report.
 - **400 Bad Request**: Check that `title` is not empty and does not exceed 200 characters. For updates, `status` must be `OPEN` or `CLOSED`.
 - **Database Connection Error**: Ensure the Docker container `cis-mysql-phase1` is running on port `3307`.
 - **Port Conflict**: If port `5257` is in use, check `launchSettings.json` to update the port.
+
+## 9. Voting on Ideas
+
+### 9.1. POST /api/ideas/{ideaId}/votes — Cast a Vote
+
+Cast a vote on a specific idea. Each user can only vote once per idea.
+
+```bash
+TOKEN="your_jwt_token_here"
+IDEA_ID="idea-uuid-here"
+
+curl -X POST http://localhost:5257/api/ideas/$IDEA_ID/votes \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json"
