@@ -68,8 +68,12 @@ public static class TopicEndpoints
         if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
             return TypedResults.BadRequest<object>(new { error = TitleLengthErrorMessage });
 
-        var userIdString = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userIdString))
+        var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(login))
+            return TypedResults.BadRequest<object>(new { error = UserIdErrorMessage });
+
+        var dbUser = await db.Users.FirstOrDefaultAsync(u => u.Login == login);
+        if (dbUser == null)
             return TypedResults.BadRequest<object>(new { error = UserIdErrorMessage });
 
         var topic = new Topic
@@ -78,7 +82,7 @@ public static class TopicEndpoints
             Title       = request.Title.Trim(),
             Description = request.Description?.Trim(),
             Status      = TopicStatus.OPEN,
-            OwnerId     = userIdString,
+            OwnerId     = dbUser.Id,
             CreatedAt   = DateTime.UtcNow,
             UpdatedAt   = DateTime.UtcNow
         };
@@ -107,8 +111,12 @@ public static class TopicEndpoints
         var topic = await db.Topics.FindAsync(id);
         if (topic is null) return TypedResults.NotFound();
 
-        var userIdString = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userIdString) || topic.OwnerId != userIdString)
+        var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(login))
+            return TypedResults.Forbid();
+
+        var dbUser = await db.Users.FirstOrDefaultAsync(u => u.Login == login);
+        if (dbUser == null || topic.OwnerId != dbUser.Id)
             return TypedResults.Forbid();
 
         topic.Title = request.Title.Trim();
@@ -131,8 +139,12 @@ public static class TopicEndpoints
         var topic = await db.Topics.FindAsync(id);
         if (topic is null) return TypedResults.NotFound();
 
-        var userIdString = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userIdString) || topic.OwnerId != userIdString)
+        var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(login))
+            return TypedResults.Forbid();
+
+        var dbUser = await db.Users.FirstOrDefaultAsync(u => u.Login == login);
+        if (dbUser == null || topic.OwnerId != dbUser.Id)
             return TypedResults.Forbid();
 
         db.Topics.Remove(topic);
