@@ -29,17 +29,12 @@ public static class DependencyInjection
         services.AddDbContext<AppDbContext>(options =>
             options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
         
-        // The secret key from Phase 1 (Java/Spring Boot) is a hex string.
-        // It needs to be decoded as a byte array to be used as a SymmetricSecurityKey.
+        // The secret key from Phase 1 (Java/Spring Boot) is configured in appsettings.json.
+        // It is stored as a Base64 encoded string to satisfy security and configuration requirements.
         var secretKey = configuration["Jwt:SecretKey"]
             ?? throw new InvalidOperationException("Jwt:SecretKey is not configured.");
 
-        // IMPORTANT: The secret key from Phase 1 is a hex string.
-        // Convert the hex string to a byte array.
-        var signingKeyBytes = Enumerable.Range(0, secretKey.Length / 2)
-            .Select(x => Convert.ToByte(secretKey.Substring(x * 2, 2), 16))
-            .ToArray();
-
+        var signingKeyBytes = Convert.FromBase64String(secretKey);
         var signingKey = new SymmetricSecurityKey(signingKeyBytes);
 
         services
@@ -60,7 +55,9 @@ public static class DependencyInjection
                     ValidateIssuer           = false, 
                     ValidateAudience         = false,
                     ValidateLifetime         = true,
-                    ClockSkew                = TimeSpan.Zero 
+                    ClockSkew                = TimeSpan.Zero,
+                    NameClaimType            = "sub",
+                    RoleClaimType            = "role"
                 };
             });
 
