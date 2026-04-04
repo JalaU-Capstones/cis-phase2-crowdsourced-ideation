@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -32,11 +33,8 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
                 services.AddDbContext<AppDbContext>(options =>
                     options.UseInMemoryDatabase("AuthTestDb"));
                 
-                // Decode the hex secret key to correctly create the SymmetricSecurityKey for verification
-                var signingKeyBytes = Enumerable.Range(0, Phase1SecretKey.Length / 2)
-                    .Select(x => Convert.ToByte(Phase1SecretKey.Substring(x * 2, 2), 16))
-                    .ToArray();
-                var signingKey = new SymmetricSecurityKey(signingKeyBytes);
+                // Use UTF8 encoding to match the Infrastructure configuration
+                var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Phase1SecretKey));
 
                 services.PostConfigureAll<JwtBearerOptions>(options =>
                 {
@@ -115,8 +113,7 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task GivenTokenSignedWithWrongSecret_WhenRequestingProtectedEndpoint_ThenReturns401()
     {
         var client      = _factory.CreateClient();
-        // We generate a mock hex-like secret for failure simulation
-        var wrongSecret = "4141414141414141414141414141414141414141414141414141414141414141";
+        var wrongSecret = "ThisIsAWrongSecretKeyForTestingPurposes123";
         var wrongToken  = TestHelpers.GenerateJwtToken(wrongSecret, Guid.NewGuid().ToString());
 
         client.DefaultRequestHeaders.Authorization =
