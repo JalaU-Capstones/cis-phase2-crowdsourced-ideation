@@ -39,11 +39,11 @@ CREATE TABLE IF NOT EXISTS ideas(
     PRIMARY KEY (id),
     content TEXT NOT NULL,
     topic_id VARCHAR(36) NOT NULL,
-    created_by VARCHAR(36) NOT NULL,
+    owner_id VARCHAR(36) NOT NULL COMMENT 'Only the owner/creator can edit or delete this idea',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_ideas_topics FOREIGN KEY (topic_id) REFERENCES topics(id),
-    CONSTRAINT fk_ideas_users FOREIGN KEY (created_by) REFERENCES users(id)
+    CONSTRAINT fk_ideas_owner FOREIGN KEY (owner_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS votes(

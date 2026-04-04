@@ -14,11 +14,15 @@ public static class TestHelpers
     }
     
     public static string GenerateJwtToken(
-        string base64Secret,
+        string hexSecret,
         string username,
         int expiresInMinutes = 60)
     {
-        var keyBytes    = Convert.FromBase64String(base64Secret);
+        // Convert hex secret string to byte array as required for the SymmetricSecurityKey.
+        var keyBytes = Enumerable.Range(0, hexSecret.Length / 2)
+            .Select(x => Convert.ToByte(hexSecret.Substring(x * 2, 2), 16))
+            .ToArray();
+
         var signingKey  = new SymmetricSecurityKey(keyBytes);
         var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
 

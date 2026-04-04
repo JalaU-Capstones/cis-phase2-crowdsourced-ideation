@@ -31,8 +31,12 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
 
                 services.AddDbContext<AppDbContext>(options =>
                     options.UseInMemoryDatabase("AuthTestDb"));
-                var signingKey = new SymmetricSecurityKey(
-                    Convert.FromBase64String(Phase1SecretKey));
+                
+                // Decode the hex secret key to correctly create the SymmetricSecurityKey for verification
+                var signingKeyBytes = Enumerable.Range(0, Phase1SecretKey.Length / 2)
+                    .Select(x => Convert.ToByte(Phase1SecretKey.Substring(x * 2, 2), 16))
+                    .ToArray();
+                var signingKey = new SymmetricSecurityKey(signingKeyBytes);
 
                 services.PostConfigureAll<JwtBearerOptions>(options =>
                 {
@@ -54,11 +58,12 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task GivenValidToken_WhenRequestingProtectedEndpoint_ThenAccessIsGranted()
     {
         var client = _factory.CreateClient();
-        var token  = TestHelpers.GenerateJwtToken(Phase1SecretKey, "testuser");
+        var token  = TestHelpers.GenerateJwtToken(Phase1SecretKey, Guid.NewGuid().ToString());
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", token);
 
-        var response = await client.GetAsync("/topics");
+        // POST is protected
+        var response = await client.PostAsync("/topics", null);
 
         response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized,
             because: "a valid Phase-1-issued token must be accepted by the CIS API");
@@ -68,7 +73,8 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task GivenNoToken_WhenRequestingProtectedEndpoint_ThenReturns401()
     {
         var client   = _factory.CreateClient();
-        var response = await client.GetAsync("/topics");
+        // POST is protected
+        var response = await client.PostAsync("/topics", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
             because: "requests without a token must be rejected");
@@ -79,12 +85,13 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var client       = _factory.CreateClient();
         var expiredToken = TestHelpers.GenerateJwtToken(
-            Phase1SecretKey, username: "testuser", expiresInMinutes: -1);
+            Phase1SecretKey, username: Guid.NewGuid().ToString(), expiresInMinutes: -1);
 
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", expiredToken);
 
-        var response = await client.GetAsync("/topics");
+        // POST is protected
+        var response = await client.PostAsync("/topics", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
             because: "expired tokens must be rejected");
@@ -97,7 +104,8 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", "this.is.not.a.valid.jwt");
 
-        var response = await client.GetAsync("/topics");
+        // POST is protected
+        var response = await client.PostAsync("/topics", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
             because: "malformed tokens must be rejected");
@@ -107,13 +115,15 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task GivenTokenSignedWithWrongSecret_WhenRequestingProtectedEndpoint_ThenReturns401()
     {
         var client      = _factory.CreateClient();
-        var wrongSecret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-        var wrongToken  = TestHelpers.GenerateJwtToken(wrongSecret, "testuser");
+        // We generate a mock hex-like secret for failure simulation
+        var wrongSecret = "4141414141414141414141414141414141414141414141414141414141414141";
+        var wrongToken  = TestHelpers.GenerateJwtToken(wrongSecret, Guid.NewGuid().ToString());
 
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", wrongToken);
 
-        var response = await client.GetAsync("/topics");
+        // POST is protected
+        var response = await client.PostAsync("/topics", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
             because: "tokens signed with an unknown key must be rejected");
