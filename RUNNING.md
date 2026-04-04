@@ -69,11 +69,11 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
          }'
 ```
 
-3. Copy the returned token and use it in the `Authorization: Bearer <token>` header for all Topics endpoints.
+3. Copy the returned token and use it in the `Authorization: Bearer <token>` header for protected Topics endpoints.
 
 ## 6. Testing the API
 
-All `/topics` endpoints require a valid JWT token. Use Swagger UI or the curl examples below.
+GET operations on `/topics` are **public**. All write operations (POST, PUT, DELETE) require a valid JWT token. Ownership rules apply to PUT and DELETE.
 
 ### 6.1. POST /topics — Create a Topic
 ```bash
@@ -95,18 +95,15 @@ curl -X POST http://localhost:5257/topics \
   "title": "My First Topic",
   "description": "A topic for new ideas",
   "status": "OPEN",
-  "createdBy": "user-uuid",
+  "ownerId": "user-uuid",
   "createdAt": "2026-03-30T00:00:00Z",
   "updatedAt": "2026-03-30T00:00:00Z"
 }
 ```
 
-### 6.2. GET /topics — Get All Topics
+### 6.2. GET /topics — Get All Topics (Public)
 ```bash
-TOKEN="your_jwt_token_here"
-
-curl http://localhost:5257/topics \
-     -H "Authorization: Bearer $TOKEN"
+curl http://localhost:5257/topics
 ```
 
 **Expected Response (200 OK):**
@@ -117,26 +114,24 @@ curl http://localhost:5257/topics \
     "title": "My First Topic",
     "description": "A topic for new ideas",
     "status": "OPEN",
-    "createdBy": "user-uuid",
+    "ownerId": "user-uuid",
     "createdAt": "2026-03-30T00:00:00Z",
     "updatedAt": "2026-03-30T00:00:00Z"
   }
 ]
 ```
 
-### 6.3. GET /topics/{id} — Get Topic by ID
+### 6.3. GET /topics/{id} — Get Topic by ID (Public)
 ```bash
-TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
 
-curl http://localhost:5257/topics/$TOPIC_ID \
-     -H "Authorization: Bearer $TOKEN"
+curl http://localhost:5257/topics/$TOPIC_ID
 ```
 
 **Expected Response (200 OK):** Topic object.
 **Expected Response (404 Not Found):** Topic does not exist.
 
-### 6.4. PUT /topics/{id} — Update a Topic
+### 6.4. PUT /topics/{id} — Update a Topic (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
@@ -153,9 +148,10 @@ curl -X PUT http://localhost:5257/topics/$TOPIC_ID \
 
 **Expected Response (200 OK):** Updated topic object.
 **Expected Response (404 Not Found):** Topic does not exist.
+**Expected Response (403 Forbidden):** You are not the owner of the topic.
 **Expected Response (400 Bad Request):** Invalid data.
 
-### 6.5. DELETE /topics/{id} — Delete a Topic
+### 6.5. DELETE /topics/{id} — Delete a Topic (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
@@ -166,6 +162,7 @@ curl -X DELETE http://localhost:5257/topics/$TOPIC_ID \
 
 **Expected Response (204 No Content)**
 **Expected Response (404 Not Found):** Topic does not exist.
+**Expected Response (403 Forbidden):** You are not the owner of the topic.
 
 ## 7. Running Tests
 ```bash
@@ -187,6 +184,7 @@ Open `coverage-report/index.html` to view the report.
 ## 8. Common Issues
 
 - **401 Unauthorized**: Verify your token is valid and not expired. Check the `Authorization: Bearer <token>` header format.
+- **403 Forbidden**: You are trying to update or delete a topic that was created by another user.
 - **404 Not Found on Topics**: Ensure the topic ID exists in the database.
 - **400 Bad Request**: Check that `title` is not empty and does not exceed 200 characters. For updates, `status` must be `OPEN` or `CLOSED`.
 - **Database Connection Error**: Ensure the Docker container `cis-mysql-phase1` is running on port `3307`.
