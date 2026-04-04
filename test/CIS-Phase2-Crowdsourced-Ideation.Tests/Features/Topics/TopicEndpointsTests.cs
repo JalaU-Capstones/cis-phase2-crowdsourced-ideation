@@ -40,7 +40,7 @@ public class TopicEndpointsTests
             Title = "Topic A",
             Description = "Desc A",
             Status = TopicStatus.OPEN,
-            OwnerId = Guid.NewGuid(),
+            OwnerId = Guid.NewGuid().ToString(),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
@@ -64,7 +64,7 @@ public class TopicEndpointsTests
             Id = id,
             Title = "Topic B",
             Status = TopicStatus.OPEN,
-            OwnerId = Guid.NewGuid(),
+            OwnerId = Guid.NewGuid().ToString(),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
@@ -92,10 +92,10 @@ public class TopicEndpointsTests
     public async Task CreateTopic_ReturnsCreated_WhenDataIsValid()
     {
         var db     = CreateInMemoryDb();
-        var userId = Guid.NewGuid();
+        var userId = Guid.NewGuid().ToString();
         
         var request = new CreateTopicRequest("New Topic", "Some description");
-        var user    = TestHelpers.CreateClaimsPrincipal(userId.ToString());
+        var user    = TestHelpers.CreateClaimsPrincipal(userId);
         var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
 
         var created = result.Result.Should().BeOfType<Created<TopicResponse>>().Subject;
@@ -135,7 +135,7 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
-        var ownerId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid().ToString();
         db.Topics.Add(new Topic
         {
             Id = id,
@@ -147,7 +147,7 @@ public class TopicEndpointsTests
         });
         await db.SaveChangesAsync();
 
-        var user = TestHelpers.CreateClaimsPrincipal(ownerId.ToString());
+        var user = TestHelpers.CreateClaimsPrincipal(ownerId);
         var request = new UpdateTopicRequest("New Title", "New Desc", "CLOSED");
         var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
 
@@ -162,7 +162,7 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
-        var ownerId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid().ToString();
         db.Topics.Add(new Topic
         {
             Id = id,
@@ -198,7 +198,7 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
-        var ownerId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid().ToString();
         db.Topics.Add(new Topic
         {
             Id = id,
@@ -210,7 +210,7 @@ public class TopicEndpointsTests
         });
         await db.SaveChangesAsync();
 
-        var user = TestHelpers.CreateClaimsPrincipal(ownerId.ToString());
+        var user = TestHelpers.CreateClaimsPrincipal(ownerId);
         var request = new UpdateTopicRequest("", null, "OPEN");
         var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
 
@@ -222,7 +222,7 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
-        var ownerId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid().ToString();
         db.Topics.Add(new Topic
         {
             Id = id,
@@ -234,7 +234,7 @@ public class TopicEndpointsTests
         });
         await db.SaveChangesAsync();
 
-        var user = TestHelpers.CreateClaimsPrincipal(ownerId.ToString());
+        var user = TestHelpers.CreateClaimsPrincipal(ownerId);
         var request = new UpdateTopicRequest("Title", null, "INVALID");
         var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
 
@@ -247,7 +247,7 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
-        var ownerId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid().ToString();
         db.Topics.Add(new Topic
         {
             Id = id,
@@ -259,7 +259,7 @@ public class TopicEndpointsTests
         });
         await db.SaveChangesAsync();
 
-        var user = TestHelpers.CreateClaimsPrincipal(ownerId.ToString());
+        var user = TestHelpers.CreateClaimsPrincipal(ownerId);
         var result = await TopicEndpoints.HandleDeleteTopic(id, user, db);
 
         result.Result.Should().BeOfType<NoContent>();
@@ -270,7 +270,7 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
-        var ownerId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid().ToString();
         db.Topics.Add(new Topic
         {
             Id = id,
