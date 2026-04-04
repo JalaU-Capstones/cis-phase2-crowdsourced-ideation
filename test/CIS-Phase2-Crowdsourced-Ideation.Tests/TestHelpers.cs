@@ -15,12 +15,16 @@ public static class TestHelpers
     }
     
     public static string GenerateJwtToken(
-        string base64Secret, // Expecting a Base64 encoded secret for consistency with Java
+        string hexSecret, // Expecting a hex encoded secret for consistency with Java
         string username,
         int expiresInMinutes = 60)
     {
-        // Convert the Base64 string secret key to bytes.
-        var signingKey  = new SymmetricSecurityKey(Convert.FromBase64String(base64Secret));
+        // Convert hex string to byte array as required for the SymmetricSecurityKey.
+        var keyBytes = Enumerable.Range(0, hexSecret.Length / 2)
+            .Select(x => Convert.ToByte(hexSecret.Substring(x * 2, 2), 16))
+            .ToArray();
+            
+        var signingKey  = new SymmetricSecurityKey(keyBytes);
         var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
 
         var now = DateTime.UtcNow;

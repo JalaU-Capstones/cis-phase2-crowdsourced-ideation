@@ -14,9 +14,8 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Auth;
 
 public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
 {
-    // The actual secret key from Phase 1, now represented as a Base64 string
-    private const string Phase1SecretKeyBase64 =
-        "QG5jUmZVanhOMnI1dThOL0E_RCgHK2tiUGRzZ1ZreXA="; // Base64 of 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+    private const string Phase1SecretKey =
+        "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970";
 
     private readonly WebApplicationFactory<Program> _factory;
 
@@ -34,8 +33,11 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
                 services.AddDbContext<AppDbContext>(options =>
                     options.UseInMemoryDatabase("AuthTestDb"));
                 
-                // Convert the Base64 string secret key to bytes for test validation
-                var signingKey = new SymmetricSecurityKey(Convert.FromBase64String(Phase1SecretKeyBase64));
+                // Convert the hex string secret key to a byte array for the SymmetricSecurityKey
+                var signingKeyBytes = Enumerable.Range(0, Phase1SecretKey.Length / 2)
+                    .Select(x => Convert.ToByte(Phase1SecretKey.Substring(x * 2, 2), 16))
+                    .ToArray();
+                var signingKey = new SymmetricSecurityKey(signingKeyBytes);
 
                 services.PostConfigureAll<JwtBearerOptions>(options =>
                 {
@@ -57,7 +59,7 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task GivenValidToken_WhenRequestingProtectedEndpoint_ThenAccessIsGranted()
     {
         var client = _factory.CreateClient();
-        var token  = TestHelpers.GenerateJwtToken(Phase1SecretKeyBase64, Guid.NewGuid().ToString());
+        var token  = TestHelpers.GenerateJwtToken(Phase1SecretKey, Guid.NewGuid().ToString());
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", token);
 
@@ -84,7 +86,7 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var client       = _factory.CreateClient();
         var expiredToken = TestHelpers.GenerateJwtToken(
-            Phase1SecretKeyBase64, username: Guid.NewGuid().ToString(), expiresInMinutes: -1);
+            Phase1SecretKey, username: Guid.NewGuid().ToString(), expiresInMinutes: -1);
 
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", expiredToken);
@@ -114,9 +116,9 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task GivenTokenSignedWithWrongSecret_WhenRequestingProtectedEndpoint_ThenReturns401()
     {
         var client      = _factory.CreateClient();
-        // A different Base64 encoded secret for failure simulation
-        var wrongSecretBase64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="; 
-        var wrongToken  = TestHelpers.GenerateJwtToken(wrongSecretBase64, Guid.NewGuid().ToString());
+        // A different hex encoded secret for failure simulation
+        var wrongSecret = "4141414141414141414141414141414141414141414141414141414141414141";
+        var wrongToken  = TestHelpers.GenerateJwtToken(wrongSecret, Guid.NewGuid().ToString());
 
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", wrongToken);
