@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text;
 using Microsoft.IdentityModel.Tokens;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Tests;
@@ -14,11 +15,15 @@ public static class TestHelpers
     }
     
     public static string GenerateJwtToken(
-        string base64Secret,
+        string hexSecret, // Expecting a hex encoded secret for consistency with Java
         string username,
         int expiresInMinutes = 60)
     {
-        var keyBytes    = Convert.FromBase64String(base64Secret);
+        // Convert hex string to byte array as required for the SymmetricSecurityKey.
+        var keyBytes = Enumerable.Range(0, hexSecret.Length / 2)
+            .Select(x => Convert.ToByte(hexSecret.Substring(x * 2, 2), 16))
+            .ToArray();
+            
         var signingKey  = new SymmetricSecurityKey(keyBytes);
         var credentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
 

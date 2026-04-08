@@ -3,6 +3,7 @@ using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using Xunit;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Topics;
@@ -15,6 +16,20 @@ public class TopicEndpointsTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         return new AppDbContext(options);
+    }
+
+    private static async Task<UserRecord> SeedUser(AppDbContext db, string login)
+    {
+        var user = new UserRecord
+        {
+            Id = Guid.NewGuid().ToString(),
+            Login = login,
+            Name = login,
+            Password = "password"
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return user;
     }
 
     // GET /topics
@@ -39,7 +54,7 @@ public class TopicEndpointsTests
             Title = "Topic A",
             Description = "Desc A",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = Guid.NewGuid().ToString(),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
@@ -63,7 +78,7 @@ public class TopicEndpointsTests
             Id = id,
             Title = "Topic B",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = Guid.NewGuid().ToString(),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
@@ -75,6 +90,7 @@ public class TopicEndpointsTests
         ok.Value!.Id.Should().Be(id);
         ok.Value.Title.Should().Be("Topic B");
     }
+
     [Fact]
     public async Task GetTopicById_ReturnsNotFound_WhenTopicDoesNotExist()
     {
@@ -90,17 +106,9 @@ public class TopicEndpointsTests
     public async Task CreateTopic_ReturnsCreated_WhenDataIsValid()
     {
         var db     = CreateInMemoryDb();
-        var userId = Guid.NewGuid().ToString();
-        const string login = "testuser";
-        db.Users.Add(new UserRecord
-        {
-            Id       = userId,
-            Login    = login,
-            Name     = "Test User",
-            Password = "irrelevant-hash"
-        });
-        await db.SaveChangesAsync();
-
+        var login = "testuser";
+        var dbUser = await SeedUser(db, login);
+        
         var request = new CreateTopicRequest("New Topic", "Some description");
         var user    = TestHelpers.CreateClaimsPrincipal(login);
         var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
@@ -109,15 +117,17 @@ public class TopicEndpointsTests
         created.Value!.Title.Should().Be("New Topic");
         created.Value.Description.Should().Be("Some description");
         created.Value.Status.Should().Be("OPEN");
-        created.Value.CreatedBy.Should().Be(userId);
+        created.Value.OwnerId.Should().Be(dbUser.Id);
     }
 
     [Fact]
     public async Task CreateTopic_ReturnsBadRequest_WhenTitleIsEmpty()
     {
         var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login); // Seed user for authentication check
         var request = new CreateTopicRequest("", null);
-        var user = TestHelpers.CreateClaimsPrincipal(Guid.NewGuid().ToString());
+        var user = TestHelpers.CreateClaimsPrincipal(login);
 
         var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
 
@@ -128,8 +138,10 @@ public class TopicEndpointsTests
     public async Task CreateTopic_ReturnsBadRequest_WhenTitleExceedsMaxLength()
     {
         var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login); // Seed user for authentication check
         var request = new CreateTopicRequest(new string('A', 201), null);
-        var user = TestHelpers.CreateClaimsPrincipal(Guid.NewGuid().ToString());
+        var user = TestHelpers.CreateClaimsPrincipal(login);
 
         var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
 
@@ -138,23 +150,27 @@ public class TopicEndpointsTests
 
     // PUT /topics/{id}
     [Fact]
-    public async Task UpdateTopic_ReturnsOk_WhenDataIsValid()
+    public async Task UpdateTopic_ReturnsOk_WhenDataIsValidAndUserIsOwner()
     {
         var db = CreateInMemoryDb();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
         var id = Guid.NewGuid().ToString();
+        
         db.Topics.Add(new Topic
         {
             Id = id,
             Title = "Old Title",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = dbUser.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
 
+        var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("New Title", "New Desc", "CLOSED");
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, db);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
 
         var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
         ok.Value!.Title.Should().Be("New Title");
@@ -163,12 +179,43 @@ public class TopicEndpointsTests
     }
 
     [Fact]
+    public async Task UpdateTopic_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        var db = CreateInMemoryDb();
+        var ownerLogin = "owner";
+        var otherLogin = "other";
+        var owner = await SeedUser(db, ownerLogin);
+        await SeedUser(db, otherLogin);
+
+        var id = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Old Title",
+            Status = TopicStatus.OPEN,
+            OwnerId = owner.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal(otherLogin);
+        var request = new UpdateTopicRequest("New Title", "New Desc", "CLOSED");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
+
+        result.Result.Should().BeOfType<ForbidHttpResult>();
+    }
+
+    [Fact]
     public async Task UpdateTopic_ReturnsNotFound_WhenTopicDoesNotExist()
     {
         var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login);
+        var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("Title", null, "OPEN");
 
-        var result = await TopicEndpoints.HandleUpdateTopic(Guid.NewGuid().ToString(), request, db);
+        var result = await TopicEndpoints.HandleUpdateTopic(Guid.NewGuid().ToString(), request, user, db);
 
         result.Result.Should().BeOfType<NotFound>();
     }
@@ -178,19 +225,22 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
         db.Topics.Add(new Topic
         {
             Id = id,
             Title = "Title",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = dbUser.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
 
+        var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("", null, "OPEN");
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, db);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
@@ -200,51 +250,88 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
         db.Topics.Add(new Topic
         {
             Id = id,
             Title = "Title",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = dbUser.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
 
+        var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("Title", null, "INVALID");
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, db);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
 
     // DELETE /topics/{id}
     [Fact]
-    public async Task DeleteTopic_ReturnsNoContent_WhenTopicExists()
+    public async Task DeleteTopic_ReturnsNoContent_WhenTopicExistsAndUserIsOwner()
     {
         var db = CreateInMemoryDb();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
+        var id = Guid.NewGuid().ToString();
+        
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Topic to delete",
+            Status = TopicStatus.OPEN,
+            OwnerId = dbUser.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+        var result = await TopicEndpoints.HandleDeleteTopic(id, user, db);
+
+        result.Result.Should().BeOfType<NoContent>();
+    }
+
+    [Fact]
+    public async Task DeleteTopic_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        var db = CreateInMemoryDb();
+        var ownerLogin = "owner";
+        var otherLogin = "other";
+        var owner = await SeedUser(db, ownerLogin);
+        await SeedUser(db, otherLogin);
+
         var id = Guid.NewGuid().ToString();
         db.Topics.Add(new Topic
         {
             Id = id,
             Title = "Topic to delete",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = owner.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleDeleteTopic(id, db);
+        var user = TestHelpers.CreateClaimsPrincipal(otherLogin);
+        var result = await TopicEndpoints.HandleDeleteTopic(id, user, db);
 
-        result.Result.Should().BeOfType<NoContent>();
+        result.Result.Should().BeOfType<ForbidHttpResult>();
     }
 
     [Fact]
     public async Task DeleteTopic_ReturnsNotFound_WhenTopicDoesNotExist()
     {
         var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login);
+        var user = TestHelpers.CreateClaimsPrincipal(login);
 
-        var result = await TopicEndpoints.HandleDeleteTopic(Guid.NewGuid().ToString(), db);
+        var result = await TopicEndpoints.HandleDeleteTopic(Guid.NewGuid().ToString(), user, db);
 
         result.Result.Should().BeOfType<NotFound>();
     }
