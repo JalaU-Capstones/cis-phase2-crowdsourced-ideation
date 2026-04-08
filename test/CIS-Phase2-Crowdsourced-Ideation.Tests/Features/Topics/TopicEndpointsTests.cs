@@ -124,8 +124,24 @@ public class TopicEndpointsTests
     public async Task CreateTopic_ReturnsBadRequest_WhenTitleIsEmpty()
     {
         var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login); // Seed user for authentication check
         var request = new CreateTopicRequest("", null);
-        var user = TestHelpers.CreateClaimsPrincipal("testuser");
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
+
+        result.Result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task CreateTopic_ReturnsBadRequest_WhenTitleExceedsMaxLength()
+    {
+        var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login); // Seed user for authentication check
+        var request = new CreateTopicRequest(new string('A', 201), null);
+        var user = TestHelpers.CreateClaimsPrincipal(login);
 
         var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
 
@@ -190,6 +206,70 @@ public class TopicEndpointsTests
         result.Result.Should().BeOfType<ForbidHttpResult>();
     }
 
+    [Fact]
+    public async Task UpdateTopic_ReturnsNotFound_WhenTopicDoesNotExist()
+    {
+        var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login);
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+        var request = new UpdateTopicRequest("Title", null, "OPEN");
+
+        var result = await TopicEndpoints.HandleUpdateTopic(Guid.NewGuid().ToString(), request, user, db);
+
+        result.Result.Should().BeOfType<NotFound>();
+    }
+
+    [Fact]
+    public async Task UpdateTopic_ReturnsBadRequest_WhenTitleIsEmpty()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Title",
+            Status = TopicStatus.OPEN,
+            OwnerId = dbUser.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+        var request = new UpdateTopicRequest("", null, "OPEN");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
+
+        result.Result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task UpdateTopic_ReturnsBadRequest_WhenStatusIsInvalid()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Title",
+            Status = TopicStatus.OPEN,
+            OwnerId = dbUser.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+        var request = new UpdateTopicRequest("Title", null, "INVALID");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
+
+        result.Result.Should().BeOfType<BadRequest<object>>();
+    }
+
     // DELETE /topics/{id}
     [Fact]
     public async Task DeleteTopic_ReturnsNoContent_WhenTopicExistsAndUserIsOwner()
@@ -241,5 +321,18 @@ public class TopicEndpointsTests
         var result = await TopicEndpoints.HandleDeleteTopic(id, user, db);
 
         result.Result.Should().BeOfType<ForbidHttpResult>();
+    }
+
+    [Fact]
+    public async Task DeleteTopic_ReturnsNotFound_WhenTopicDoesNotExist()
+    {
+        var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login);
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+
+        var result = await TopicEndpoints.HandleDeleteTopic(Guid.NewGuid().ToString(), user, db);
+
+        result.Result.Should().BeOfType<NotFound>();
     }
 }
