@@ -21,16 +21,10 @@ We use Docker to run MySQL 8.0 with the exact legacy schema (no changes allowed)
 docker compose up -d
 ```
 
-> ⚠️ **If you already have the `cis-mysql-phase1` container running from Phase 1,**
-> Docker will not re-run `init.sql` automatically. Run the script manually once:
+> ⚠️ **To apply changes to init.sql, you must run:**
 > ```bash
-> docker exec -i cis-mysql-phase1 mysql -u sd3user -psd3pass sd3 < init.sql
+> docker compose down -v && docker compose up -d
 > ```
-> Then verify the new tables were created:
-> ```bash
-> docker exec -i cis-mysql-phase1 mysql -u sd3user -psd3pass sd3 -e "SHOW TABLES;"
-> ```
-> You should see: `ideas`, `topics`, `users`, `votes`.
 
 2. Verify it's running:
 ```bash
@@ -78,4 +72,3 @@ dotnet tool run reportgenerator \
 - EF Core 8 with MySQL (ADR-003)
 - Testing: xUnit + FluentAssertions + Moq (ADR-005)
 - Authentication: JWT Bearer (delegated from Phase 1 User Management API)
-

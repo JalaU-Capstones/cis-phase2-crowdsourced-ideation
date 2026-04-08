@@ -12,7 +12,7 @@ public static class TopicEndpoints
 {
     private const string TitleLengthErrorMessage = "Title is required and must be at most 200 characters.";
     private const string TopicNotFoundErrorMessage = "Topic not found.";
-    private const string ForbiddenErrorMessage = "You do not have permission to modify this topic.";
+    private const string ForbiddenErrorMessage = "You are not authorized to modify this topic.";
     private const string StatusErrorMessage = "Status must be 'OPEN' or 'CLOSED'.";
     private const string UserIdErrorMessage = "User identity not found or invalid.";
 
@@ -65,16 +65,20 @@ public static class TopicEndpoints
         ClaimsPrincipal user,
         AppDbContext db)
     {
-        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
-            return TypedResults.BadRequest<object>(new { error = TitleLengthErrorMessage });
-
+        // 1. Authentication (Checked by middleware [RequireAuthorization])
+        
+        // 2. Authorization (Owner validation - not applicable for create)
         var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(login))
-            return TypedResults.BadRequest<object>(new { error = UserIdErrorMessage });
+            return TypedResults.Unauthorized();
 
         var dbUser = await db.Users.FirstOrDefaultAsync(u => u.Login == login);
         if (dbUser == null)
-            return TypedResults.BadRequest<object>(new { error = UserIdErrorMessage });
+            return TypedResults.Unauthorized();
+
+        // 3. Input validation
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
+            return TypedResults.BadRequest<object>(new { error = TitleLengthErrorMessage });
 
         var topic = new Topic
         {
@@ -102,15 +106,13 @@ public static class TopicEndpoints
         ClaimsPrincipal user,
         AppDbContext db)
     {
-        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
-            return TypedResults.BadRequest<object>(new { error = TitleLengthErrorMessage });
-
-        if (!Enum.TryParse<TopicStatus>(request.Status, ignoreCase: true, out var parsedStatus))
-            return TypedResults.BadRequest<object>(new { error = StatusErrorMessage });
-
+        // 1. Authentication (Checked by middleware [RequireAuthorization])
+        
+        // Find topic first to check ownership
         var topic = await db.Topics.FindAsync(id);
         if (topic is null) return TypedResults.NotFound();
 
+        // 2. Authorization (Ownership)
         var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(login))
             return TypedResults.Forbid();
@@ -118,6 +120,13 @@ public static class TopicEndpoints
         var dbUser = await db.Users.FirstOrDefaultAsync(u => u.Login == login);
         if (dbUser == null || topic.OwnerId != dbUser.Id)
             return TypedResults.Forbid();
+
+        // 3. Input validation
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
+            return TypedResults.BadRequest<object>(new { error = TitleLengthErrorMessage });
+
+        if (!Enum.TryParse<TopicStatus>(request.Status, ignoreCase: true, out var parsedStatus))
+            return TypedResults.BadRequest<object>(new { error = StatusErrorMessage });
 
         topic.Title = request.Title.Trim();
         topic.Description = request.Description?.Trim();
@@ -136,9 +145,13 @@ public static class TopicEndpoints
         ClaimsPrincipal user,
         AppDbContext db)
     {
+        // 1. Authentication (Checked by middleware [RequireAuthorization])
+        
+        // Find topic first to check ownership
         var topic = await db.Topics.FindAsync(id);
         if (topic is null) return TypedResults.NotFound();
 
+        // 2. Authorization (Ownership)
         var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(login))
             return TypedResults.Forbid();

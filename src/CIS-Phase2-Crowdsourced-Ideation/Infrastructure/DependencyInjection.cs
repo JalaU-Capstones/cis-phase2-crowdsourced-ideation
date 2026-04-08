@@ -60,6 +60,23 @@ public static class DependencyInjection
                     ClockSkew                = TimeSpan.Zero,
                     NameClaimType            = "sub"
                 };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnChallenge = context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.StatusCode = 401;
+                        context.Response.ContentType = "application/json";
+                        return context.Response.WriteAsync("{\"error\": \"Unauthorized - Valid token required\"}");
+                    },
+                    OnForbidden = context =>
+                    {
+                        context.Response.StatusCode = 403;
+                        context.Response.ContentType = "application/json";
+                        return context.Response.WriteAsync("{\"error\": \"You are not authorized to modify this topic\"}");
+                    }
+                };
             });
 
         services.AddAuthorization();

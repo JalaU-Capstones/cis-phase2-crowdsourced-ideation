@@ -17,20 +17,15 @@ cd cis-phase2-crowdsourced-ideation
 
 ## 3. Setting Up the Database
 
-> ⚠️ **If you already have the `cis-mysql-phase1` container running from Phase 1**, run the script manually:
-> ```powershell
-> Get-Content init.sql | docker exec -i cis-mysql-phase1 mysql -u sd3user -psd3pass sd3
-> ```
-> Then verify the tables were created:
-> ```bash
-> docker exec -i cis-mysql-phase1 mysql -u sd3user -psd3pass sd3 -e "SHOW TABLES;"
-> ```
-> You should see: `ideas`, `topics`, `users`, `votes`.
-
-If starting fresh:
+To start the database fresh:
 ```bash
 docker compose up -d
 ```
+
+> ⚠️ **To apply changes to init.sql, you must run:**
+> ```bash
+> docker compose down -v && docker compose up -d
+> ```
 
 Verify the container is running:
 ```bash
@@ -148,7 +143,7 @@ curl -X PUT http://localhost:5257/topics/$TOPIC_ID \
 
 **Expected Response (200 OK):** Updated topic object.
 **Expected Response (404 Not Found):** Topic does not exist.
-**Expected Response (403 Forbidden):** You are not the owner of the topic.
+**Expected Response (403 Forbidden):** You are not authorized to modify this topic.
 **Expected Response (400 Bad Request):** Invalid data.
 
 ### 6.5. DELETE /topics/{id} — Delete a Topic (Owner only)
@@ -162,7 +157,7 @@ curl -X DELETE http://localhost:5257/topics/$TOPIC_ID \
 
 **Expected Response (204 No Content)**
 **Expected Response (404 Not Found):** Topic does not exist.
-**Expected Response (403 Forbidden):** You are not the owner of the topic.
+**Expected Response (403 Forbidden):** You are not authorized to modify this topic.
 
 ## 7. Running Tests
 ```bash
