@@ -214,6 +214,10 @@ curl -X DELETE http://localhost:5257/api/ideas/$IDEA_ID \
      -H "Authorization: Bearer $TOKEN"
 ```
 
+**Expected Response (200 OK):** A confirmation message indicating the idea (and all related votes) were deleted.
+**Expected Response (404 Not Found):** Idea does not exist.
+**Expected Response (403 Forbidden):** You are not authorized to modify this idea, or the topic is closed.
+
 ## 7. Running Tests
 ```bash
 dotnet test

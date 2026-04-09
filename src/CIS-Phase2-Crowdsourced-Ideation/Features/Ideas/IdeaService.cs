@@ -147,6 +147,19 @@ public class IdeaService(AppDbContext context) : IIdeaService
             throw new UnauthorizedAccessException("You are not authorized to modify this idea");
         }
 
+        // Legacy schema note:
+        // The MySQL foreign key in init.sql does NOT specify ON DELETE CASCADE for ideas -> votes.
+        // To keep the intended behavior (deleting an idea removes its votes), delete votes first.
+        if (!context.Database.IsRelational())
+        {
+            var votes = await context.Votes.Where(v => v.IdeaId == id).ToListAsync();
+            context.Votes.RemoveRange(votes);
+        }
+        else
+        {
+            await context.Votes.Where(v => v.IdeaId == id).ExecuteDeleteAsync();
+        }
+
         context.Set<Idea>().Remove(idea);
         await context.SaveChangesAsync();
         return true;

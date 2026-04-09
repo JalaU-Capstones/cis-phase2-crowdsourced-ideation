@@ -69,9 +69,10 @@ public static class IdeaEndpoints
             .WithDescription("""
                 Only the owner of the idea can delete it.
                 Ideas cannot be deleted when the associated topic is CLOSED.
-                Deleting a topic will cascade delete all related ideas and votes.
+                Deleting an idea will also delete all related votes.
+                Deleting a topic will delete all related ideas and votes.
                 """)
-            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound);
@@ -136,7 +137,9 @@ public static class IdeaEndpoints
         try
         {
             var result = await service.DeleteIdeaAsync(id, user);
-            return result ? TypedResults.NoContent() : TypedResults.NotFound();
+            return result
+                ? TypedResults.Ok(new { message = "Idea deleted. All votes related to this idea were deleted as well.", ideaId = id })
+                : TypedResults.NotFound();
         }
         catch (UnauthorizedAccessException ex)
         {
