@@ -286,19 +286,19 @@ public static class TopicEndpoints
 
         if (ideaIds.Count > 0)
         {
-            // Prefer server-side deletes (EF Core 7/8) when supported by provider.
-            try
-            {
-                await db.Votes.Where(v => ideaIds.Contains(v.IdeaId)).ExecuteDeleteAsync();
-                await db.Ideas.Where(i => i.TopicId == id).ExecuteDeleteAsync();
-            }
-            catch (NotSupportedException)
+            // Prefer server-side deletes (EF Core 7/8) on relational providers only.
+            if (!db.Database.IsRelational())
             {
                 var votes = await db.Votes.Where(v => ideaIds.Contains(v.IdeaId)).ToListAsync();
                 db.Votes.RemoveRange(votes);
 
                 var ideas = await db.Ideas.Where(i => i.TopicId == id).ToListAsync();
                 db.Ideas.RemoveRange(ideas);
+            }
+            else
+            {
+                await db.Votes.Where(v => ideaIds.Contains(v.IdeaId)).ExecuteDeleteAsync();
+                await db.Ideas.Where(i => i.TopicId == id).ExecuteDeleteAsync();
             }
         }
 
