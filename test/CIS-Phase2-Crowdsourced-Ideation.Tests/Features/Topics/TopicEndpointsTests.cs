@@ -270,6 +270,32 @@ public class TopicEndpointsTests
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
 
+    [Fact]
+    public async Task UpdateTopic_ReturnsBadRequest_WhenTryingToReopenClosedTopic()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
+
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Title",
+            Status = TopicStatus.CLOSED,
+            OwnerId = dbUser.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+        var request = new UpdateTopicRequest("New Title", "New Desc", "OPEN");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
+
+        result.Result.Should().BeOfType<BadRequest<object>>();
+    }
+
     // DELETE /topics/{id}
     [Fact]
     public async Task DeleteTopic_ReturnsOk_WithMessage_WhenTopicExistsAndUserIsOwner()

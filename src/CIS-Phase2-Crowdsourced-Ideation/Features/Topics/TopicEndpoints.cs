@@ -15,6 +15,7 @@ public static class TopicEndpoints
     private const string TopicNotFoundErrorMessage = "Topic not found.";
     private const string ForbiddenErrorMessage = "You are not authorized to modify this topic.";
     private const string StatusErrorMessage = "Status must be 'OPEN' or 'CLOSED'.";
+    private const string TopicCannotBeReopenedMessage = "This topic is closed and cannot be reopened.";
     private const string UserIdErrorMessage = "User identity not found or invalid.";
 
     /// <summary>
@@ -51,10 +52,13 @@ public static class TopicEndpoints
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status400BadRequest);
 
-        protectedGroup.MapPut("/{id}", HandleUpdateTopic)
+        protectedGroup.MapPut("/{id}", UpdateTopicWithInfoHeader)
             .WithName("UpdateTopic")
             .WithSummary("Update a topic (owner only)")
-            .WithDescription("Only the topic owner can update title/description/status.")
+            .WithDescription("""
+                Only the topic owner can update title/description/status.
+                Once a topic is CLOSED, it cannot be reopened (status cannot be changed back to OPEN).
+                """)
             .Produces<TopicResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
@@ -162,6 +166,10 @@ public static class TopicEndpoints
         if (!Enum.TryParse<TopicStatus>(request.Status, ignoreCase: true, out var parsedStatus))
             return TypedResults.BadRequest<object>(new { error = StatusErrorMessage });
 
+        // Business rule: once CLOSED, a topic cannot be reopened.
+        if (topic.Status == TopicStatus.CLOSED && parsedStatus == TopicStatus.OPEN)
+            return TypedResults.BadRequest<object>(new { error = TopicCannotBeReopenedMessage });
+
         topic.Title = request.Title.Trim();
         topic.Description = request.Description?.Trim();
         topic.Status = parsedStatus;
@@ -169,6 +177,31 @@ public static class TopicEndpoints
 
         await db.SaveChangesAsync();
         return TypedResults.Ok(ToResponse(topic));
+    }
+
+    private static async Task<Results<Ok<TopicResponse>, NotFound, BadRequest<object>, ForbidHttpResult>> UpdateTopicWithInfoHeader(
+        string id,
+        UpdateTopicRequest request,
+        ClaimsPrincipal user,
+        AppDbContext db,
+        HttpContext http)
+    {
+        var previousStatus = await db.Topics
+            .AsNoTracking()
+            .Where(t => t.Id == id)
+            .Select(t => t.Status)
+            .FirstOrDefaultAsync();
+
+        var result = await HandleUpdateTopic(id, request, user, db);
+
+        if (result.Result is Ok<TopicResponse> ok &&
+            previousStatus == TopicStatus.OPEN &&
+            string.Equals(ok.Value?.Status, TopicStatus.CLOSED.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            http.Response.Headers["X-Info"] = "Topic closed. Once closed, it cannot be reopened.";
+        }
+
+        return result;
     }
 
     /// <summary>

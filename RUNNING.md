@@ -163,6 +163,8 @@ curl -X PUT http://localhost:5257/api/topics/$TOPIC_ID \
 **Expected Response (403 Forbidden):** You are not authorized to modify this topic.
 **Expected Response (400 Bad Request):** Invalid data.
 
+Note: If you update a topic and set `status` to `CLOSED`, the response includes an `X-Info` header indicating the topic cannot be reopened. Once closed, attempts to set `status` back to `OPEN` will return `400 Bad Request`.
+
 ### 6.5. DELETE /api/topics/{id} — Delete a Topic (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
