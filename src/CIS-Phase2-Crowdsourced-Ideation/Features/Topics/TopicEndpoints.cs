@@ -1,4 +1,5 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
+using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -30,13 +31,19 @@ public static class TopicEndpoints
         group.MapGet("/", HandleGetAllTopics)
             .WithName("GetAllTopics")
             .WithSummary("Get all topics (public)")
-            .WithDescription("Public endpoint. Returns all topics.")
+            .WithDescription("""
+                Public endpoint. Returns all topics.
+                When a topic is CLOSED, the response includes the winning idea (the idea with IsWinning=true), if present.
+                """)
             .Produces<IEnumerable<TopicResponse>>(StatusCodes.Status200OK);
 
         group.MapGet("/{id}", HandleGetTopicById)
             .WithName("GetTopicById")
             .WithSummary("Get topic by id (public)")
-            .WithDescription("Public endpoint. Returns a topic by its id.")
+            .WithDescription("""
+                Public endpoint. Returns a topic by its id.
+                When a topic is CLOSED, the response includes the winning idea (the idea with IsWinning=true), if present.
+                """)
             .Produces<TopicResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
@@ -83,7 +90,31 @@ public static class TopicEndpoints
     public static async Task<Ok<IEnumerable<TopicResponse>>> HandleGetAllTopics(AppDbContext db)
     {
         var topics = await db.Topics.AsNoTracking().ToListAsync();
-        return TypedResults.Ok(topics.Select(ToResponse));
+
+        var closedTopicIds = topics
+            .Where(t => t.Status == TopicStatus.CLOSED)
+            .Select(t => t.Id)
+            .ToList();
+
+        Dictionary<string, WinningIdeaResponse?> winnersByTopicId = new();
+        if (closedTopicIds.Count > 0)
+        {
+            // NOTE: IsWinning is stored inside ideas.content JSON (legacy schema). We must evaluate it in-memory.
+            var ideasForClosedTopics = await db.Ideas
+                .AsNoTracking()
+                .Where(i => closedTopicIds.Contains(i.TopicId))
+                .ToListAsync();
+
+            winnersByTopicId = ideasForClosedTopics
+                .Where(i => i.IsWinning)
+                .GroupBy(i => i.TopicId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (WinningIdeaResponse?)MapToWinningIdeaResponse(g.First()));
+        }
+
+        return TypedResults.Ok(topics.Select(t =>
+            ToResponse(t, t.Status == TopicStatus.CLOSED ? winnersByTopicId.GetValueOrDefault(t.Id) : null)));
     }
 
     /// <summary>
@@ -92,7 +123,23 @@ public static class TopicEndpoints
     public static async Task<Results<Ok<TopicResponse>, NotFound>> HandleGetTopicById(string id, AppDbContext db)
     {
         var topic = await db.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id);
-        return topic is null ? TypedResults.NotFound() : TypedResults.Ok(ToResponse(topic));
+        if (topic is null)
+            return TypedResults.NotFound();
+
+        WinningIdeaResponse? winner = null;
+        if (topic.Status == TopicStatus.CLOSED)
+        {
+            var ideas = await db.Ideas
+                .AsNoTracking()
+                .Where(i => i.TopicId == id)
+                .ToListAsync();
+
+            var winningIdea = ideas.FirstOrDefault(i => i.IsWinning);
+            if (winningIdea is not null)
+                winner = MapToWinningIdeaResponse(winningIdea);
+        }
+
+        return TypedResults.Ok(ToResponse(topic, winner));
     }
 
     /// <summary>
@@ -267,6 +314,9 @@ public static class TopicEndpoints
     /// <summary>
     /// Converts a <see cref="Topic"/> entity to a <see cref="TopicResponse"/> DTO.
     /// </summary>
-    internal static TopicResponse ToResponse(Topic t) =>
-        new(t.Id, t.Title, t.Description, t.Status.ToString(), t.OwnerId, t.CreatedAt, t.UpdatedAt);
+    internal static TopicResponse ToResponse(Topic t, WinningIdeaResponse? winningIdea = null) =>
+        new(t.Id, t.Title, t.Description, t.Status.ToString(), t.OwnerId, t.CreatedAt, t.UpdatedAt, winningIdea);
+
+    private static WinningIdeaResponse MapToWinningIdeaResponse(Idea idea) =>
+        new(idea.Id, idea.TopicId, idea.OwnerId, idea.Title, idea.Description, idea.CreatedAt, idea.UpdatedAt, idea.IsWinning);
 }

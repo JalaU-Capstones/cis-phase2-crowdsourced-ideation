@@ -110,7 +110,8 @@ curl -X POST http://localhost:5257/api/topics \
   "status": "OPEN",
   "ownerId": "user-uuid",
   "createdAt": "2026-03-30T00:00:00Z",
-  "updatedAt": "2026-03-30T00:00:00Z"
+  "updatedAt": "2026-03-30T00:00:00Z",
+  "winningIdea": null
 }
 ```
 
@@ -129,7 +130,8 @@ curl http://localhost:5257/api/topics
     "status": "OPEN",
     "ownerId": "user-uuid",
     "createdAt": "2026-03-30T00:00:00Z",
-    "updatedAt": "2026-03-30T00:00:00Z"
+    "updatedAt": "2026-03-30T00:00:00Z",
+    "winningIdea": null
   }
 ]
 ```
@@ -165,6 +167,7 @@ curl -X PUT http://localhost:5257/api/topics/$TOPIC_ID \
 **Expected Response (400 Bad Request):** Invalid data.
 
 Note: If you update a topic and set `status` to `CLOSED`, the response includes an `X-Info` header indicating the topic cannot be reopened. Once closed, attempts to set `status` back to `OPEN` will return `400 Bad Request`.
+When a topic is `CLOSED`, `GET /api/topics` and `GET /api/topics/{id}` will include `winningIdea` if an idea is marked with `isWinning=true`.
 
 ### 6.5. DELETE /api/topics/{id} — Delete a Topic (Owner only)
 ```bash

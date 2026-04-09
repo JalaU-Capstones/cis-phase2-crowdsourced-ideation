@@ -1,5 +1,6 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
+using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -67,6 +68,45 @@ public class TopicEndpointsTests
         ok.Value!.First().Title.Should().Be("Topic A");
     }
 
+    [Fact]
+    public async Task GetAllTopics_IncludesWinningIdea_WhenTopicIsClosed()
+    {
+        var db = CreateInMemoryDb();
+        var topicId = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = topicId,
+            Title = "Closed Topic",
+            Description = "Desc",
+            Status = TopicStatus.CLOSED,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        db.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = topicId,
+            OwnerId = Guid.NewGuid(),
+            Title = "Winner",
+            Description = "Winning idea",
+            IsWinning = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db);
+
+        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
+        ok.Value.Should().HaveCount(1);
+        ok.Value!.First().WinningIdea.Should().NotBeNull();
+        ok.Value!.First().WinningIdea!.Title.Should().Be("Winner");
+    }
+
     // GET /topics/{id}
     [Fact]
     public async Task GetTopicById_ReturnsOk_WhenTopicExists()
@@ -89,6 +129,43 @@ public class TopicEndpointsTests
         var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
         ok.Value!.Id.Should().Be(id);
         ok.Value.Title.Should().Be("Topic B");
+    }
+
+    [Fact]
+    public async Task GetTopicById_IncludesWinningIdea_WhenTopicIsClosed()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Closed Topic",
+            Status = TopicStatus.CLOSED,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        db.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = id,
+            OwnerId = Guid.NewGuid(),
+            Title = "Winner",
+            Description = "Winning idea",
+            IsWinning = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetTopicById(id, db);
+
+        var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
+        ok.Value!.WinningIdea.Should().NotBeNull();
+        ok.Value.WinningIdea!.Title.Should().Be("Winner");
     }
 
     [Fact]
