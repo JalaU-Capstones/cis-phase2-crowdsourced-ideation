@@ -103,12 +103,8 @@ public class Idea
         if (string.IsNullOrWhiteSpace(content))
             return;
 
-        try
+        if (TryParseIdeaContent(content, out var parsed))
         {
-            var parsed = JsonSerializer.Deserialize<IdeaContent>(content, JsonOptions);
-            if (parsed is null)
-                return;
-
             _suppressSync = true;
             try
             {
@@ -121,13 +117,55 @@ public class Idea
                 _suppressSync = false;
             }
         }
+    }
+
+    private sealed record IdeaContent(string Title, string Description, bool IsWinning);
+
+    private static bool TryParseIdeaContent(string content, out IdeaContent parsed)
+    {
+        parsed = default!;
+
+        // Most common case: content is a JSON object.
+        try
+        {
+            var direct = JsonSerializer.Deserialize<IdeaContent>(content, JsonOptions);
+            if (direct is not null)
+            {
+                parsed = direct;
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through to other formats.
+        }
+
+        // Some legacy data may be double-encoded, e.g. "\"{\\\"title\\\":...}\""
+        // (a JSON string whose value is the JSON object).
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            if (doc.RootElement.ValueKind == JsonValueKind.String)
+            {
+                var inner = doc.RootElement.GetString();
+                if (!string.IsNullOrWhiteSpace(inner))
+                {
+                    var innerParsed = JsonSerializer.Deserialize<IdeaContent>(inner, JsonOptions);
+                    if (innerParsed is not null)
+                    {
+                        parsed = innerParsed;
+                        return true;
+                    }
+                }
+            }
+        }
         catch (JsonException)
         {
             // Ignore malformed/non-JSON content.
         }
-    }
 
-    private sealed record IdeaContent(string Title, string Description, bool IsWinning);
+        return false;
+    }
 }
 
 public class Vote

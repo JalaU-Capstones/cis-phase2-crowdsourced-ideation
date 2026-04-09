@@ -18,7 +18,9 @@ public class IdeaConfiguration : IEntityTypeConfiguration<Idea>
         builder.Property(i => i.Content)
             .HasColumnName("content")
             .HasColumnType("text")
-            .IsRequired();
+            .IsRequired()
+            // Ensure EF materialization uses the setter so JSON hydration runs.
+            .UsePropertyAccessMode(PropertyAccessMode.Property);
 
         builder.Property(i => i.TopicId)
             .HasColumnName("topic_id")
