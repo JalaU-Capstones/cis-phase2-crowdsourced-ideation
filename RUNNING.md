@@ -87,11 +87,11 @@ Ideas endpoints:
 - All write operations on `/api/ideas` require JWT, and only the owner can update/delete their idea.
 - If the related topic is `CLOSED`, updating or deleting an idea returns `403 Forbidden` with: `This topic is closed. No modifications allowed.`
 
-### 6.1. POST /topics — Create a Topic
+### 6.1. POST /api/topics — Create a Topic
 ```bash
 TOKEN="your_jwt_token_here"
 
-curl -X POST http://localhost:5257/topics \
+curl -X POST http://localhost:5257/api/topics \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
@@ -113,9 +113,9 @@ curl -X POST http://localhost:5257/topics \
 }
 ```
 
-### 6.2. GET /topics — Get All Topics (Public)
+### 6.2. GET /api/topics — Get All Topics (Public)
 ```bash
-curl http://localhost:5257/topics
+curl http://localhost:5257/api/topics
 ```
 
 **Expected Response (200 OK):**
@@ -133,22 +133,22 @@ curl http://localhost:5257/topics
 ]
 ```
 
-### 6.3. GET /topics/{id} — Get Topic by ID (Public)
+### 6.3. GET /api/topics/{id} — Get Topic by ID (Public)
 ```bash
 TOPIC_ID="generated-uuid"
 
-curl http://localhost:5257/topics/$TOPIC_ID
+curl http://localhost:5257/api/topics/$TOPIC_ID
 ```
 
 **Expected Response (200 OK):** Topic object.
 **Expected Response (404 Not Found):** Topic does not exist.
 
-### 6.4. PUT /topics/{id} — Update a Topic (Owner only)
+### 6.4. PUT /api/topics/{id} — Update a Topic (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
 
-curl -X PUT http://localhost:5257/topics/$TOPIC_ID \
+curl -X PUT http://localhost:5257/api/topics/$TOPIC_ID \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
@@ -163,12 +163,12 @@ curl -X PUT http://localhost:5257/topics/$TOPIC_ID \
 **Expected Response (403 Forbidden):** You are not authorized to modify this topic.
 **Expected Response (400 Bad Request):** Invalid data.
 
-### 6.5. DELETE /topics/{id} — Delete a Topic (Owner only)
+### 6.5. DELETE /api/topics/{id} — Delete a Topic (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
 
-curl -X DELETE http://localhost:5257/topics/$TOPIC_ID \
+curl -X DELETE http://localhost:5257/api/topics/$TOPIC_ID \
      -H "Authorization: Bearer $TOKEN"
 ```
 

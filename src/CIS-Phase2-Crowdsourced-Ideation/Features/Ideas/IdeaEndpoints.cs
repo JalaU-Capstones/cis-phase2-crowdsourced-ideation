@@ -15,18 +15,23 @@ public static class IdeaEndpoints
         group.MapGet("/", GetAllIdeas)
             .WithName("GetAllIdeas")
             .WithSummary("Get all ideas (public)")
-            .WithDescription("Public endpoint. Returns ideas with `title` and `description` as separate fields (content is stored as JSON in the DB).")
+            .WithDescription("""
+                Public endpoint. Returns ideas with `title` and `description` as separate fields.
+                Internally, ideas are stored in the legacy-compatible `ideas.content` column as JSON.
+                """)
             .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK);
 
         group.MapGet("/{id:guid}", GetIdea)
             .WithName("GetIdea")
             .WithSummary("Get an idea by its ID")
+            .WithDescription("Public endpoint. Returns an idea by id.")
             .Produces<IdeaResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
         group.MapGet("/topic/{topicId}", GetIdeasByTopic)
             .WithName("GetIdeasByTopic")
             .WithSummary("Get all ideas for a specific topic")
+            .WithDescription("Public endpoint. Returns all ideas for the given topic id.")
             .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK);
 
         // Protected write access

@@ -1,4 +1,5 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
@@ -21,20 +22,53 @@ public static class TopicEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapTopicEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/topics")
+        var group = endpoints.MapGroup("/api/topics")
             .WithTags("Topics");
 
         // Public read access
-        group.MapGet("/", HandleGetAllTopics);
-        group.MapGet("/{id}", HandleGetTopicById);
+        group.MapGet("/", HandleGetAllTopics)
+            .WithName("GetAllTopics")
+            .WithSummary("Get all topics (public)")
+            .WithDescription("Public endpoint. Returns all topics.")
+            .Produces<IEnumerable<TopicResponse>>(StatusCodes.Status200OK);
+
+        group.MapGet("/{id}", HandleGetTopicById)
+            .WithName("GetTopicById")
+            .WithSummary("Get topic by id (public)")
+            .WithDescription("Public endpoint. Returns a topic by its id.")
+            .Produces<TopicResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
 
         // Protected write access
         var protectedGroup = group.MapGroup("/")
             .RequireAuthorization();
 
-        protectedGroup.MapPost("/", HandleCreateTopic);
-        protectedGroup.MapPut("/{id}", HandleUpdateTopic);
-        protectedGroup.MapDelete("/{id}", HandleDeleteTopic);
+        protectedGroup.MapPost("/", HandleCreateTopic)
+            .WithName("CreateTopic")
+            .WithSummary("Create a topic (authenticated)")
+            .WithDescription("Only authenticated users can create topics. The creator becomes the owner.")
+            .Produces<TopicResponse>(StatusCodes.Status201Created)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        protectedGroup.MapPut("/{id}", HandleUpdateTopic)
+            .WithName("UpdateTopic")
+            .WithSummary("Update a topic (owner only)")
+            .WithDescription("Only the topic owner can update title/description/status.")
+            .Produces<TopicResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        protectedGroup.MapDelete("/{id}", HandleDeleteTopic)
+            .WithName("DeleteTopic")
+            .WithSummary("Delete a topic (owner only)")
+            .WithDescription("Only the topic owner can delete. Deleting a topic cascades delete related ideas and votes.")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound);
 
         return endpoints;
     }
@@ -94,7 +128,7 @@ public static class TopicEndpoints
         db.Topics.Add(topic);
         await db.SaveChangesAsync();
 
-        return TypedResults.Created($"/topics/{topic.Id}", ToResponse(topic));
+        return TypedResults.Created($"/api/topics/{topic.Id}", ToResponse(topic));
     }
 
     /// <summary>

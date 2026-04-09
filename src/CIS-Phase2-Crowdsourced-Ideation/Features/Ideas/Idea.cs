@@ -73,7 +73,9 @@ public class Idea
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true
     };
 
     private void SyncContent()
