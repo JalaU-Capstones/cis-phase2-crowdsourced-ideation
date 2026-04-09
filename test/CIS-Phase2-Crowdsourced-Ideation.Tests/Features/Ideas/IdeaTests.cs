@@ -81,6 +81,69 @@ public class IdeaServiceTests
     }
 
     [Fact]
+    public async Task GetIdeaById_HydratesTitleAndDescription_FromContentJson()
+    {
+        // Arrange
+        var topicId = "topic-1";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Topic 1" });
+        var id = Guid.NewGuid();
+        var ownerId = Guid.NewGuid();
+        _context.Ideas.Add(new Idea
+        {
+            Id = id,
+            TopicId = topicId,
+            OwnerId = ownerId,
+            Content = "{\"title\":\"My Idea\",\"description\":\"Some details\",\"isWinning\":false}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        // Simulate materialization from store (not tracked instance).
+        _context.ChangeTracker.Clear();
+
+        // Act
+        var result = await _service.GetIdeaByIdAsync(id);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("My Idea", result!.Title);
+        Assert.Equal("Some details", result.Description);
+        Assert.False(result.IsWinning);
+    }
+
+    [Fact]
+    public async Task GetIdeasByTopicId_HydratesTitleAndDescription_FromDoubleEncodedContentJson()
+    {
+        // Arrange
+        var topicId = "topic-1";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Topic 1" });
+        var id = Guid.NewGuid();
+
+        // Stored as a JSON string containing the JSON object (double-encoded).
+        _context.Ideas.Add(new Idea
+        {
+            Id = id,
+            TopicId = topicId,
+            OwnerId = Guid.NewGuid(),
+            Content = "\"{\\\"title\\\":\\\"My Idea\\\",\\\"description\\\":\\\"Some details\\\",\\\"isWinning\\\":true}\"",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        // Act
+        var result = (await _service.GetIdeasByTopicIdAsync(topicId)).ToList();
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("My Idea", result[0].Title);
+        Assert.Equal("Some details", result[0].Description);
+        Assert.True(result[0].IsWinning);
+    }
+
+    [Fact]
     public async Task GetIdeaById_ReturnsIdeaResponse_WhenFound()
     {
         // Arrange
@@ -277,5 +340,58 @@ public class IdeaServiceTests
         Assert.True(result);
         Assert.Null(await _context.Set<Idea>().FindAsync(idea.Id));
         Assert.Empty(await _context.Set<Vote>().Where(v => v.IdeaId == idea.Id).ToListAsync());
+    }
+
+    [Fact]
+    public async Task UpdateIdea_ThrowsUnauthorized_WhenTopicIsClosed()
+    {
+        // Arrange
+        var topicId = "topic-closed";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Closed Topic", Status = TopicStatus.CLOSED });
+        var ownerId = Guid.NewGuid();
+        var idea = new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = topicId,
+            OwnerId = ownerId,
+            Title = "Old",
+            Description = "Old",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _context.Ideas.Add(idea);
+        await _context.SaveChangesAsync();
+
+        var user = CreateUser(ownerId);
+        var request = new UpdateIdeaRequest("New", "New");
+
+        // Act & Assert
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _service.UpdateIdeaAsync(idea.Id, request, user));
+    }
+
+    [Fact]
+    public async Task DeleteIdea_ThrowsUnauthorized_WhenTopicIsClosed()
+    {
+        // Arrange
+        var topicId = "topic-closed";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Closed Topic", Status = TopicStatus.CLOSED });
+        var ownerId = Guid.NewGuid();
+        var idea = new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = topicId,
+            OwnerId = ownerId,
+            Title = "Title",
+            Description = "Desc",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _context.Ideas.Add(idea);
+        await _context.SaveChangesAsync();
+
+        var user = CreateUser(ownerId);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _service.DeleteIdeaAsync(idea.Id, user));
     }
 }

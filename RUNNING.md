@@ -231,10 +231,12 @@ dotnet test
 
 To generate a coverage report:
 ```bash
-dotnet test --collect:"XPlat Code Coverage"
+dotnet clean
+rm -rf test/TestResults coverage-report
+dotnet test --collect:"XPlat Code Coverage" --results-directory test/TestResults
 dotnet tool restore
 dotnet tool run reportgenerator \
-  -reports:"test/**/TestResults/**/coverage.cobertura.xml" \
+  -reports:"test/TestResults/**/coverage.cobertura.xml" \
   -targetdir:"coverage-report" \
   -reporttypes:Html
 ```
