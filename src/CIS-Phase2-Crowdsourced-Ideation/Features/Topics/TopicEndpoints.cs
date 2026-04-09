@@ -194,6 +194,34 @@ public static class TopicEndpoints
         if (dbUser == null || topic.OwnerId != dbUser.Id)
             return TypedResults.Forbid();
 
+        // Legacy schema note:
+        // The MySQL foreign keys in init.sql do NOT specify ON DELETE CASCADE for topics -> ideas.
+        // To keep the intended behavior (deleting a topic removes its ideas and votes), we perform
+        // an application-level cascade delete in the correct order.
+        var ideaIds = await db.Ideas
+            .AsNoTracking()
+            .Where(i => i.TopicId == id)
+            .Select(i => i.Id)
+            .ToListAsync();
+
+        if (ideaIds.Count > 0)
+        {
+            // Prefer server-side deletes (EF Core 7/8) when supported by provider.
+            try
+            {
+                await db.Votes.Where(v => ideaIds.Contains(v.IdeaId)).ExecuteDeleteAsync();
+                await db.Ideas.Where(i => i.TopicId == id).ExecuteDeleteAsync();
+            }
+            catch (NotSupportedException)
+            {
+                var votes = await db.Votes.Where(v => ideaIds.Contains(v.IdeaId)).ToListAsync();
+                db.Votes.RemoveRange(votes);
+
+                var ideas = await db.Ideas.Where(i => i.TopicId == id).ToListAsync();
+                db.Ideas.RemoveRange(ideas);
+            }
+        }
+
         db.Topics.Remove(topic);
         await db.SaveChangesAsync();
         return TypedResults.NoContent();
