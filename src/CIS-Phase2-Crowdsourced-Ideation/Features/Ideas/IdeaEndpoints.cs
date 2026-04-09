@@ -10,44 +10,62 @@ public static class IdeaEndpoints
     public static void MapIdeaEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/ideas")
-            .WithTags("Ideas")
-            .RequireAuthorization();
+            .WithTags("Ideas");
 
-        group.MapPost("/", CreateIdea)
-            .WithName("CreateIdea")
-            .WithSummary("Create a new idea for a specific topic")
-            .WithDescription("Any authenticated user can create an idea.")
-            .Produces<IdeaResponse>(StatusCodes.Status201Created)
-            .Produces(StatusCodes.Status401Unauthorized)
-            .Produces(StatusCodes.Status400BadRequest);
+        group.MapGet("/", GetAllIdeas)
+            .WithName("GetAllIdeas")
+            .WithSummary("Get all ideas (public)")
+            .WithDescription("Public endpoint. Returns ideas with `title` and `description` as separate fields (content is stored as JSON in the DB).")
+            .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK);
 
         group.MapGet("/{id:guid}", GetIdea)
             .WithName("GetIdea")
             .WithSummary("Get an idea by its ID")
             .Produces<IdeaResponse>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
 
         group.MapGet("/topic/{topicId}", GetIdeasByTopic)
             .WithName("GetIdeasByTopic")
             .WithSummary("Get all ideas for a specific topic")
-            .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK);
 
-        group.MapPut("/{id:guid}", UpdateIdea)
+        // Protected write access
+        var protectedGroup = group.MapGroup("/")
+            .RequireAuthorization();
+
+        protectedGroup.MapPost("/", CreateIdea)
+            .WithName("CreateIdea")
+            .WithSummary("Create a new idea for a specific topic")
+            .WithDescription("""
+                Any authenticated user can create an idea for an existing topic.
+                The idea is stored in the legacy-compatible `ideas.content` column as JSON.
+                """)
+            .Produces<IdeaResponse>(StatusCodes.Status201Created)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        protectedGroup.MapPut("/{id:guid}", UpdateIdea)
             .WithName("UpdateIdea")
             .WithSummary("Update an existing idea")
-            .WithDescription("Only the owner of the idea can update it.")
+            .WithDescription("""
+                Only the owner of the idea can update it.
+                Ideas cannot be modified when the associated topic is CLOSED.
+                """)
             .Produces<IdeaResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status400BadRequest);
 
-        group.MapDelete("/{id:guid}", DeleteIdea)
+        protectedGroup.MapDelete("/{id:guid}", DeleteIdea)
             .WithName("DeleteIdea")
             .WithSummary("Delete an idea")
-            .WithDescription("Only the owner of the idea can delete it.")
+            .WithDescription("""
+                Only the owner of the idea can delete it.
+                Ideas cannot be deleted when the associated topic is CLOSED.
+                Deleting a topic will cascade delete all related ideas and votes.
+                """)
             .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
@@ -70,6 +88,12 @@ public static class IdeaEndpoints
         {
             return TypedResults.BadRequest(ex.Message);
         }
+    }
+
+    private static async Task<IResult> GetAllIdeas(IIdeaService service)
+    {
+        var result = await service.GetAllIdeasAsync();
+        return TypedResults.Ok(result);
     }
 
     private static async Task<IResult> GetIdea(Guid id, IIdeaService service)

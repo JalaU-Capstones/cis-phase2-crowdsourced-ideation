@@ -8,6 +8,7 @@ namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 public interface IIdeaService
 {
     Task<IdeaResponse> CreateIdeaAsync(CreateIdeaRequest request, ClaimsPrincipal user);
+    Task<IEnumerable<IdeaResponse>> GetAllIdeasAsync();
     Task<IdeaResponse?> GetIdeaByIdAsync(Guid id);
     Task<IEnumerable<IdeaResponse>> GetIdeasByTopicIdAsync(string topicId);
     Task<IdeaResponse?> UpdateIdeaAsync(Guid id, UpdateIdeaRequest request, ClaimsPrincipal user);
@@ -68,12 +69,22 @@ public class IdeaService(AppDbContext context) : IIdeaService
         return idea == null ? null : MapToResponse(idea);
     }
 
+    public async Task<IEnumerable<IdeaResponse>> GetAllIdeasAsync()
+    {
+        var ideas = await context.Set<Idea>()
+            .AsNoTracking()
+            .OrderByDescending(i => i.UpdatedAt)
+            .ToListAsync();
+        return ideas.Select(MapToResponse);
+    }
+
     public async Task<IEnumerable<IdeaResponse>> GetIdeasByTopicIdAsync(string topicId)
     {
-        return await context.Set<Idea>()
+        var ideas = await context.Set<Idea>()
+            .AsNoTracking()
             .Where(i => i.TopicId == topicId)
-            .Select(i => MapToResponse(i))
             .ToListAsync();
+        return ideas.Select(MapToResponse);
     }
 
     public async Task<IdeaResponse?> UpdateIdeaAsync(Guid id, UpdateIdeaRequest request, ClaimsPrincipal user)
@@ -87,6 +98,17 @@ public class IdeaService(AppDbContext context) : IIdeaService
 
         var idea = await context.Set<Idea>().FindAsync(id);
         if (idea == null) return null;
+
+        // Topic closed protection: updates are forbidden when the topic is CLOSED.
+        var topicStatus = await context.Topics
+            .AsNoTracking()
+            .Where(t => t.Id == idea.TopicId)
+            .Select(t => t.Status)
+            .FirstOrDefaultAsync();
+        if (topicStatus == TopicStatus.CLOSED)
+        {
+            throw new UnauthorizedAccessException("This topic is closed. No modifications allowed.");
+        }
 
         var userId = await ResolveUserIdAsync(user);
         if (idea.OwnerId != userId)
@@ -107,6 +129,17 @@ public class IdeaService(AppDbContext context) : IIdeaService
     {
         var idea = await context.Set<Idea>().FindAsync(id);
         if (idea == null) return false;
+
+        // Topic closed protection: deletes are forbidden when the topic is CLOSED.
+        var topicStatus = await context.Topics
+            .AsNoTracking()
+            .Where(t => t.Id == idea.TopicId)
+            .Select(t => t.Status)
+            .FirstOrDefaultAsync();
+        if (topicStatus == TopicStatus.CLOSED)
+        {
+            throw new UnauthorizedAccessException("This topic is closed. No modifications allowed.");
+        }
 
         var userId = await ResolveUserIdAsync(user);
         if (idea.OwnerId != userId)
