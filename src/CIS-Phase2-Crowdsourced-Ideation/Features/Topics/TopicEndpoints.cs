@@ -65,7 +65,7 @@ public static class TopicEndpoints
             .WithName("DeleteTopic")
             .WithSummary("Delete a topic (owner only)")
             .WithDescription("Only the topic owner can delete. Deleting a topic cascades delete related ideas and votes.")
-            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound);
@@ -174,7 +174,7 @@ public static class TopicEndpoints
     /// <summary>
     /// Deletes a topic. Only the owner can perform this action.
     /// </summary>
-    public static async Task<Results<NoContent, NotFound, ForbidHttpResult>> HandleDeleteTopic(
+    public static async Task<Results<Ok<object>, NotFound, ForbidHttpResult>> HandleDeleteTopic(
         string id,
         ClaimsPrincipal user,
         AppDbContext db)
@@ -224,7 +224,11 @@ public static class TopicEndpoints
 
         db.Topics.Remove(topic);
         await db.SaveChangesAsync();
-        return TypedResults.NoContent();
+        return TypedResults.Ok<object>(new
+        {
+            message = "Topic deleted. This action also deleted all related ideas and votes.",
+            topicId = id
+        });
     }
 
     /// <summary>

@@ -172,7 +172,7 @@ curl -X DELETE http://localhost:5257/api/topics/$TOPIC_ID \
      -H "Authorization: Bearer $TOKEN"
 ```
 
-**Expected Response (204 No Content)**
+**Expected Response (200 OK):** A confirmation message indicating the topic (and all related ideas/votes) were deleted.
 **Expected Response (404 Not Found):** Topic does not exist.
 **Expected Response (403 Forbidden):** You are not authorized to modify this topic.
 

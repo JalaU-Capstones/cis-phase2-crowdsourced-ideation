@@ -272,7 +272,7 @@ public class TopicEndpointsTests
 
     // DELETE /topics/{id}
     [Fact]
-    public async Task DeleteTopic_ReturnsNoContent_WhenTopicExistsAndUserIsOwner()
+    public async Task DeleteTopic_ReturnsOk_WithMessage_WhenTopicExistsAndUserIsOwner()
     {
         var db = CreateInMemoryDb();
         var login = "owner";
@@ -293,7 +293,9 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal(login);
         var result = await TopicEndpoints.HandleDeleteTopic(id, user, db);
 
-        result.Result.Should().BeOfType<NoContent>();
+        var ok = result.Result.Should().BeOfType<Ok<object>>().Subject;
+        ok.Value.Should().NotBeNull();
+        ok.Value!.ToString().Should().Contain("deleted all related ideas and votes");
     }
 
     [Fact]
