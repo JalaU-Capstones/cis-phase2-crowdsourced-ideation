@@ -1,4 +1,3 @@
-using CIS.Phase2.CrowdsourcedIdeation.Features.Health;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 
@@ -14,7 +13,6 @@ public static class DependencyInjection
 
     public static WebApplication MapFeatures(this WebApplication app)
     {
-        app.MapHealthEndpoints();
         app.MapTopicEndpoints();
         app.MapIdeaEndpoints();
         return app;

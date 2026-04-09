@@ -24,12 +24,14 @@ dotnet-test:
   variables:
     NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget/packages"
   # The script that will be executed by the runner.
-  # It restores and runs all tests.
+  # It restores, runs all tests, and generates a coverage report (XPlat Code Coverage).
   script:
     - dotnet --info
     - dotnet restore
     - mkdir -p test/CIS-Phase2-Crowdsourced-Ideation.Tests/TestResults
-    - dotnet test --configuration Release --no-restore --logger "junit;LogFilePath=test/CIS-Phase2-Crowdsourced-Ideation.Tests/TestResults/TEST-results.xml"
+    - dotnet test --configuration Release --no-restore --collect:"XPlat Code Coverage" --logger "junit;LogFilePath=test/CIS-Phase2-Crowdsourced-Ideation.Tests/TestResults/TEST-results.xml"
+    - dotnet tool restore
+    - dotnet tool run reportgenerator -reports:"test/**/TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Html;Cobertura
   # Defines artifacts to be saved after the job completes.
   artifacts:
     # We always save the test reports, even if the job fails, to allow for inspection.
@@ -37,12 +39,16 @@ dotnet-test:
     # Specifies the path to the test reports.
     paths:
       - test/CIS-Phase2-Crowdsourced-Ideation.Tests/TestResults/
+      - coverage-report/
     # Sets an expiration date for the artifacts to save storage space.
     expire_in: 1 week
     # Allows GitLab to parse the JUnit report format for display in the UI (e.g., in Merge Requests).
     reports:
       junit:
         - test/CIS-Phase2-Crowdsourced-Ideation.Tests/TestResults/TEST-*.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage-report/Cobertura.xml
   # Defines the rules for when this job should run.
   rules:
     # Rule 1: Run this job on any push to the 'main' branch.
