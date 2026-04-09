@@ -1,3 +1,5 @@
+using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
+
 namespace CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 
 /// <summary>
@@ -39,6 +41,8 @@ public sealed class Topic
     /// The date and time when the topic was last updated (UTC).
     /// </summary>
     public DateTime UpdatedAt { get; set; }
+
+    public ICollection<Idea> Ideas { get; set; } = new List<Idea>();
 }
 
 /// <summary>

@@ -70,6 +70,18 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 
 GET operations on `/topics` are **public**. All write operations (POST, PUT, DELETE) require a valid JWT token. Ownership rules apply to PUT and DELETE.
 
+### 6.0. Note About Legacy Database Schema
+
+The local MySQL schema is defined in `init.sql` and is treated as legacy-compatible.
+
+- Topic columns map 1:1 to the API model.
+- Ideas are stored in the `ideas` table with a single `content` (TEXT) column. The API still exposes `title`, `description`, and `isWinning`; these fields are serialized into `ideas.content` as JSON so the public API contract remains unchanged.
+
+If you inspect the database directly, expect `ideas.content` to look like:
+```json
+{"title":"My Idea","description":"Some details","isWinning":false}
+```
+
 ### 6.1. POST /topics — Create a Topic
 ```bash
 TOKEN="your_jwt_token_here"
@@ -158,6 +170,44 @@ curl -X DELETE http://localhost:5257/topics/$TOPIC_ID \
 **Expected Response (204 No Content)**
 **Expected Response (404 Not Found):** Topic does not exist.
 **Expected Response (403 Forbidden):** You are not authorized to modify this topic.
+
+### 6.6. POST /api/ideas — Create an Idea (Authenticated)
+```bash
+TOKEN="your_jwt_token_here"
+TOPIC_ID="generated-uuid"
+
+curl -X POST http://localhost:5257/api/ideas \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "topicId": "'"$TOPIC_ID"'",
+           "title": "My Idea",
+           "description": "Some details"
+         }'
+```
+
+### 6.7. PUT /api/ideas/{id} — Update an Idea (Owner only)
+```bash
+TOKEN="your_jwt_token_here"
+IDEA_ID="generated-uuid"
+
+curl -X PUT http://localhost:5257/api/ideas/$IDEA_ID \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "title": "Updated title",
+           "description": "Updated description"
+         }'
+```
+
+### 6.8. DELETE /api/ideas/{id} — Delete an Idea (Owner only)
+```bash
+TOKEN="your_jwt_token_here"
+IDEA_ID="generated-uuid"
+
+curl -X DELETE http://localhost:5257/api/ideas/$IDEA_ID \
+     -H "Authorization: Bearer $TOKEN"
+```
 
 ## 7. Running Tests
 ```bash

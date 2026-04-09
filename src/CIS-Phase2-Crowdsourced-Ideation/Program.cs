@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Diagnostics;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddFeatures(); // Add this line
 
 var app = builder.Build();
 
