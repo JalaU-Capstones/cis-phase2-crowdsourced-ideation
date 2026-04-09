@@ -32,7 +32,7 @@ dotnet-test:
     - mkdir -p test/TestResults
     - dotnet test --configuration Release --no-restore --results-directory test/TestResults --collect:"XPlat Code Coverage" --logger "junit;LogFilePath=test/TestResults/TEST-results.xml"
     - dotnet tool restore
-    - dotnet tool run reportgenerator -reports:"test/TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Html;Cobertura
+    - dotnet tool run reportgenerator -reports:"test/TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:"Html;Cobertura"
   # Defines artifacts to be saved after the job completes.
   artifacts:
     # We always save the test reports, even if the job fails, to allow for inspection.
@@ -46,7 +46,7 @@ dotnet-test:
     # Allows GitLab to parse the JUnit report format for display in the UI (e.g., in Merge Requests).
     reports:
       junit:
-        - test/TestResults/TEST-*.xml
+        - test/TestResults/TEST-results.xml
       coverage_report:
         coverage_format: cobertura
         path: coverage-report/Cobertura.xml
