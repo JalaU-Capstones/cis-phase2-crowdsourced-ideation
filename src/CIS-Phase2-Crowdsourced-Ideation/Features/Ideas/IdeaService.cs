@@ -39,10 +39,20 @@ public class IdeaService(AppDbContext context) : IIdeaService
     {
         var userId = await ResolveUserIdAsync(user);
         
-        var topicExists = await context.Topics.AnyAsync(t => t.Id == request.TopicId);
-        if (!topicExists)
+        var topic = await context.Topics
+            .AsNoTracking()
+            .Where(t => t.Id == request.TopicId)
+            .Select(t => new { t.Id, t.Status })
+            .FirstOrDefaultAsync();
+
+        if (topic is null)
         {
              throw new ArgumentException("Topic not found");
+        }
+
+        if (topic.Status == TopicStatus.CLOSED)
+        {
+            throw new UnauthorizedAccessException("This topic is closed. No modifications allowed.");
         }
 
         var idea = new Idea

@@ -94,6 +94,10 @@ public static class IdeaEndpoints
         {
             return TypedResults.BadRequest(ex.Message);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return TypedResults.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
     }
 
     private static async Task<IResult> GetAllIdeas(IIdeaService service)

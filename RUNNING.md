@@ -85,6 +85,7 @@ If you inspect the database directly, expect `ideas.content` to look like:
 Ideas endpoints:
 - `GET /api/ideas` and `GET /api/ideas/{id}` are **public** (no JWT required).
 - All write operations on `/api/ideas` require JWT, and only the owner can update/delete their idea.
+- You cannot create an idea for a `CLOSED` topic (403 Forbidden).
 - If the related topic is `CLOSED`, updating or deleting an idea returns `403 Forbidden` with: `This topic is closed. No modifications allowed.`
 
 ### 6.1. POST /api/topics — Create a Topic

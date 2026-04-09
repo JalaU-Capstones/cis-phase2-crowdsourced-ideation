@@ -65,6 +65,22 @@ public class IdeaServiceTests
     }
 
     [Fact]
+    public async Task CreateIdea_ThrowsUnauthorized_WhenTopicIsClosed()
+    {
+        // Arrange
+        var topicId = "topic-closed";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Closed Topic", Status = TopicStatus.CLOSED });
+        await _context.SaveChangesAsync();
+
+        var userId = Guid.NewGuid();
+        var user = CreateUser(userId);
+        var request = new CreateIdeaRequest(topicId, "New Idea", "Description");
+
+        // Act & Assert
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _service.CreateIdeaAsync(request, user));
+    }
+
+    [Fact]
     public async Task GetIdeaById_ReturnsIdeaResponse_WhenFound()
     {
         // Arrange
