@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.OpenApi.Any;
+using Microsoft.OpenApi.Models;
 using System.Security.Claims;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
@@ -31,8 +33,53 @@ public static class IdeaEndpoints
         group.MapGet("/topic/{topicId}", GetIdeasByTopic)
             .WithName("GetIdeasByTopic")
             .WithSummary("Get all ideas for a specific topic")
-            .WithDescription("Public endpoint. Returns all ideas for the given topic id.")
-            .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK);
+            .WithDescription("""
+                Public endpoint. Returns all ideas for the given topic id.
+                Returns an empty array if the topic has no ideas or the topic does not exist.
+                """)
+            .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK)
+            .WithOpenApi(operation =>
+            {
+                var topicIdParam = operation.Parameters.FirstOrDefault(p => p.Name == "topicId");
+                if (topicIdParam is not null)
+                {
+                    topicIdParam.Description = "Topic id (UUID). If it does not exist, the endpoint returns an empty array.";
+                    topicIdParam.Example = new OpenApiString("61cb20af-ae78-4148-a057-df5e7962db39");
+                }
+
+                if (operation.Responses.TryGetValue("200", out var ok) &&
+                    ok.Content.TryGetValue("application/json", out var json))
+                {
+                    json.Examples = new Dictionary<string, OpenApiExample>
+                    {
+                        ["IdeasFound"] = new()
+                        {
+                            Summary = "Ideas for an existing topic",
+                            Value = new OpenApiArray
+                            {
+                                new OpenApiObject
+                                {
+                                    ["id"] = new OpenApiString("d5bd9f40-9f2a-4c25-8d18-1dfc7f2d965e"),
+                                    ["topicId"] = new OpenApiString("61cb20af-ae78-4148-a057-df5e7962db39"),
+                                    ["ownerId"] = new OpenApiString("4aa1fdf5-fb0a-4a79-a0a4-2c5be62da24a"),
+                                    ["title"] = new OpenApiString("Reduce checkout friction"),
+                                    ["description"] = new OpenApiString("Offer guest checkout and fewer required fields."),
+                                    ["createdAt"] = new OpenApiString("2026-04-09T12:00:00Z"),
+                                    ["updatedAt"] = new OpenApiString("2026-04-09T12:00:00Z"),
+                                    ["isWinning"] = new OpenApiBoolean(false)
+                                }
+                            }
+                        },
+                        ["NoIdeas"] = new()
+                        {
+                            Summary = "No ideas (topic missing or has none)",
+                            Value = new OpenApiArray()
+                        }
+                    };
+                }
+
+                return operation;
+            });
 
         // Protected write access
         var protectedGroup = group.MapGroup("/")

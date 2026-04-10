@@ -84,6 +84,7 @@ If you inspect the database directly, expect `ideas.content` to look like:
 
 Ideas endpoints:
 - `GET /api/ideas` and `GET /api/ideas/{id}` are **public** (no JWT required).
+- `GET /api/ideas/topic/{topicId}` is **public** and returns all ideas for a given topic (or `[]` if none).
 - All write operations on `/api/ideas` require JWT, and only the owner can update/delete their idea.
 - You cannot create an idea for a `CLOSED` topic (403 Forbidden).
 - If the related topic is `CLOSED`, updating or deleting an idea returns `403 Forbidden` with: `This topic is closed. No modifications allowed.`
@@ -196,6 +197,15 @@ curl -X POST http://localhost:5257/api/ideas \
            "description": "Some details"
          }'
 ```
+
+### 6.6a. GET /api/ideas/topic/{topicId} — Get Ideas by Topic (Public)
+```bash
+TOPIC_ID="generated-uuid"
+
+curl http://localhost:5257/api/ideas/topic/$TOPIC_ID
+```
+
+**Expected Response (200 OK):** An array of ideas. If the topic does not exist (or has no ideas), the response is `[]`.
 
 ### 6.7. PUT /api/ideas/{id} — Update an Idea (Owner only)
 ```bash
