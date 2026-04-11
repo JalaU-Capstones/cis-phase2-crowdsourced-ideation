@@ -3,11 +3,21 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Text;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure;
 
+/// <summary>
+/// Contains extension methods for registering infrastructure services.
+/// </summary>
 public static class DependencyInjection
 {
+    /// <summary>
+    /// Adds infrastructure-related services to the container.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The application configuration.</param>
+    /// <returns>The modified service collection.</returns>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -19,13 +29,22 @@ public static class DependencyInjection
         services.AddDbContext<AppDbContext>(options =>
             options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
         
+        // The secret key from Phase 1 (Java/Spring Boot) is configured in appsettings.json.
+        // The Java implementation uses Decoders.BASE64.decode(secretKey).
         var secretKey = configuration["Jwt:SecretKey"]
             ?? throw new InvalidOperationException("Jwt:SecretKey is not configured.");
 
-        var signingKey = new SymmetricSecurityKey(Convert.FromBase64String(secretKey));
+        // IMPORTANT: The secret key from Phase 1 is Base64 encoded in the Java configuration.
+        // We must decode it from Base64 to get the actual key bytes.
+        var signingKeyBytes = Convert.FromBase64String(secretKey);
+        var signingKey = new SymmetricSecurityKey(signingKeyBytes);
 
         services
-            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
             .AddJwtBearer(options =>
             {
                 options.RequireHttpsMetadata =
@@ -36,9 +55,27 @@ public static class DependencyInjection
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey         = signingKey,
                     ValidateIssuer           = false, 
-                    ValidateAudience         = false, 
+                    ValidateAudience         = false,
                     ValidateLifetime         = true,
-                    ClockSkew                = TimeSpan.Zero 
+                    ClockSkew                = TimeSpan.Zero,
+                    NameClaimType            = "sub"
+                };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnChallenge = context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.StatusCode = 401;
+                        context.Response.ContentType = "application/json";
+                        return context.Response.WriteAsync("{\"error\": \"Unauthorized - Valid token required\"}");
+                    },
+                    OnForbidden = context =>
+                    {
+                        context.Response.StatusCode = 403;
+                        context.Response.ContentType = "application/json";
+                        return context.Response.WriteAsync("{\"error\": \"You are not authorized to modify this topic\"}");
+                    }
                 };
             });
 

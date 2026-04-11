@@ -1,8 +1,11 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
+using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using Xunit;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Topics;
@@ -15,6 +18,20 @@ public class TopicEndpointsTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         return new AppDbContext(options);
+    }
+
+    private static async Task<UserRecord> SeedUser(AppDbContext db, string login)
+    {
+        var user = new UserRecord
+        {
+            Id = Guid.NewGuid().ToString(),
+            Login = login,
+            Name = login,
+            Password = "password"
+        };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return user;
     }
 
     // GET /topics
@@ -39,7 +56,7 @@ public class TopicEndpointsTests
             Title = "Topic A",
             Description = "Desc A",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = Guid.NewGuid().ToString(),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
@@ -50,6 +67,121 @@ public class TopicEndpointsTests
         var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
         ok.Value.Should().HaveCount(1);
         ok.Value!.First().Title.Should().Be("Topic A");
+    }
+
+    [Fact]
+    public async Task GetAllTopics_IncludesWinningIdea_WhenTopicIsClosed()
+    {
+        var db = CreateInMemoryDb();
+        var topicId = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = topicId,
+            Title = "Closed Topic",
+            Description = "Desc",
+            Status = TopicStatus.CLOSED,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        db.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = topicId,
+            OwnerId = Guid.NewGuid(),
+            Title = "Winner",
+            Description = "Winning idea",
+            IsWinning = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db);
+
+        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
+        ok.Value.Should().HaveCount(1);
+        ok.Value!.First().WinningIdea.Should().NotBeNull();
+        ok.Value!.First().WinningIdea!.Title.Should().Be("Winner");
+    }
+
+    [Fact]
+    public async Task GetAllTopics_DoesNotIncludeWinningIdea_WhenTopicIsOpen()
+    {
+        var db = CreateInMemoryDb();
+        var topicId = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = topicId,
+            Title = "Open Topic",
+            Description = "Desc",
+            Status = TopicStatus.OPEN,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        // Even if an idea is marked as winning, OPEN topics must not surface it.
+        db.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = topicId,
+            OwnerId = Guid.NewGuid(),
+            Title = "Winner",
+            Description = "Winning idea",
+            IsWinning = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db);
+
+        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
+        ok.Value.Should().HaveCount(1);
+        ok.Value!.First().WinningIdea.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ClosedTopicWithoutWinner_ReturnsNullWinningIdea()
+    {
+        var db = CreateInMemoryDb();
+        var topicId = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = topicId,
+            Title = "Closed Topic",
+            Status = TopicStatus.CLOSED,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        db.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = topicId,
+            OwnerId = Guid.NewGuid(),
+            Title = "Not winner",
+            Description = "No",
+            IsWinning = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db);
+
+        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
+        ok.Value.Should().HaveCount(1);
+        ok.Value!.First().WinningIdea.Should().BeNull();
     }
 
     // GET /topics/{id}
@@ -63,7 +195,7 @@ public class TopicEndpointsTests
             Id = id,
             Title = "Topic B",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = Guid.NewGuid().ToString(),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
@@ -75,6 +207,114 @@ public class TopicEndpointsTests
         ok.Value!.Id.Should().Be(id);
         ok.Value.Title.Should().Be("Topic B");
     }
+
+    [Fact]
+    public async Task GetTopicById_IncludesWinningIdea_WhenTopicIsClosed()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Closed Topic",
+            Status = TopicStatus.CLOSED,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        db.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = id,
+            OwnerId = Guid.NewGuid(),
+            Title = "Winner",
+            Description = "Winning idea",
+            IsWinning = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetTopicById(id, db);
+
+        var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
+        ok.Value!.WinningIdea.Should().NotBeNull();
+        ok.Value.WinningIdea!.Title.Should().Be("Winner");
+    }
+
+    [Fact]
+    public async Task GetTopicById_DoesNotIncludeWinningIdea_WhenTopicIsOpen()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Open Topic",
+            Status = TopicStatus.OPEN,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        db.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = id,
+            OwnerId = Guid.NewGuid(),
+            Title = "Winner",
+            Description = "Winning idea",
+            IsWinning = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetTopicById(id, db);
+        var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
+        ok.Value!.WinningIdea.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetTopicById_ClosedTopicWithoutWinner_ReturnsNullWinningIdea()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Closed Topic",
+            Status = TopicStatus.CLOSED,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        db.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = id,
+            OwnerId = Guid.NewGuid(),
+            Title = "Not winner",
+            Description = "No",
+            IsWinning = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetTopicById(id, db);
+        var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
+        ok.Value!.WinningIdea.Should().BeNull();
+    }
+
     [Fact]
     public async Task GetTopicById_ReturnsNotFound_WhenTopicDoesNotExist()
     {
@@ -90,17 +330,9 @@ public class TopicEndpointsTests
     public async Task CreateTopic_ReturnsCreated_WhenDataIsValid()
     {
         var db     = CreateInMemoryDb();
-        var userId = Guid.NewGuid().ToString();
-        const string login = "testuser";
-        db.Users.Add(new UserRecord
-        {
-            Id       = userId,
-            Login    = login,
-            Name     = "Test User",
-            Password = "irrelevant-hash"
-        });
-        await db.SaveChangesAsync();
-
+        var login = "testuser";
+        var dbUser = await SeedUser(db, login);
+        
         var request = new CreateTopicRequest("New Topic", "Some description");
         var user    = TestHelpers.CreateClaimsPrincipal(login);
         var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
@@ -109,15 +341,41 @@ public class TopicEndpointsTests
         created.Value!.Title.Should().Be("New Topic");
         created.Value.Description.Should().Be("Some description");
         created.Value.Status.Should().Be("OPEN");
-        created.Value.CreatedBy.Should().Be(userId);
+        created.Value.OwnerId.Should().Be(dbUser.Id);
+    }
+
+    [Fact]
+    public async Task CreateTopic_ReturnsUnauthorized_WhenUserIdentityMissing()
+    {
+        var db = CreateInMemoryDb();
+        var request = new CreateTopicRequest("New Topic", "Some description");
+        var user = new ClaimsPrincipal(new ClaimsIdentity()); // no sub/NameIdentifier
+
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
+
+        result.Result.Should().BeOfType<UnauthorizedHttpResult>();
+    }
+
+    [Fact]
+    public async Task CreateTopic_ReturnsUnauthorized_WhenUserNotFoundInDatabase()
+    {
+        var db = CreateInMemoryDb();
+        var request = new CreateTopicRequest("New Topic", "Some description");
+        var user = TestHelpers.CreateClaimsPrincipal("missing-user");
+
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
+
+        result.Result.Should().BeOfType<UnauthorizedHttpResult>();
     }
 
     [Fact]
     public async Task CreateTopic_ReturnsBadRequest_WhenTitleIsEmpty()
     {
         var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login); // Seed user for authentication check
         var request = new CreateTopicRequest("", null);
-        var user = TestHelpers.CreateClaimsPrincipal(Guid.NewGuid().ToString());
+        var user = TestHelpers.CreateClaimsPrincipal(login);
 
         var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
 
@@ -128,8 +386,10 @@ public class TopicEndpointsTests
     public async Task CreateTopic_ReturnsBadRequest_WhenTitleExceedsMaxLength()
     {
         var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login); // Seed user for authentication check
         var request = new CreateTopicRequest(new string('A', 201), null);
-        var user = TestHelpers.CreateClaimsPrincipal(Guid.NewGuid().ToString());
+        var user = TestHelpers.CreateClaimsPrincipal(login);
 
         var result = await TopicEndpoints.HandleCreateTopic(request, user, db);
 
@@ -138,23 +398,27 @@ public class TopicEndpointsTests
 
     // PUT /topics/{id}
     [Fact]
-    public async Task UpdateTopic_ReturnsOk_WhenDataIsValid()
+    public async Task UpdateTopic_ReturnsOk_WhenDataIsValidAndUserIsOwner()
     {
         var db = CreateInMemoryDb();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
         var id = Guid.NewGuid().ToString();
+        
         db.Topics.Add(new Topic
         {
             Id = id,
             Title = "Old Title",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = dbUser.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
 
+        var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("New Title", "New Desc", "CLOSED");
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, db);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
 
         var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
         ok.Value!.Title.Should().Be("New Title");
@@ -163,12 +427,91 @@ public class TopicEndpointsTests
     }
 
     [Fact]
+    public async Task UpdateTopic_ReturnsForbid_WhenUserIdentityMissing()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Old Title",
+            Status = TopicStatus.OPEN,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = new ClaimsPrincipal(new ClaimsIdentity()); // no sub/NameIdentifier
+        var request = new UpdateTopicRequest("New Title", "New Desc", "OPEN");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
+
+        result.Result.Should().BeOfType<ForbidHttpResult>();
+    }
+
+    [Fact]
+    public async Task UpdateTopic_ReturnsForbid_WhenUserNotFoundInDatabase()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Old Title",
+            Status = TopicStatus.OPEN,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal("missing-user");
+        var request = new UpdateTopicRequest("New Title", "New Desc", "OPEN");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
+
+        result.Result.Should().BeOfType<ForbidHttpResult>();
+    }
+
+    [Fact]
+    public async Task UpdateTopic_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        var db = CreateInMemoryDb();
+        var ownerLogin = "owner";
+        var otherLogin = "other";
+        var owner = await SeedUser(db, ownerLogin);
+        await SeedUser(db, otherLogin);
+
+        var id = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Old Title",
+            Status = TopicStatus.OPEN,
+            OwnerId = owner.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal(otherLogin);
+        var request = new UpdateTopicRequest("New Title", "New Desc", "CLOSED");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
+
+        result.Result.Should().BeOfType<ForbidHttpResult>();
+    }
+
+    [Fact]
     public async Task UpdateTopic_ReturnsNotFound_WhenTopicDoesNotExist()
     {
         var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login);
+        var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("Title", null, "OPEN");
 
-        var result = await TopicEndpoints.HandleUpdateTopic(Guid.NewGuid().ToString(), request, db);
+        var result = await TopicEndpoints.HandleUpdateTopic(Guid.NewGuid().ToString(), request, user, db);
 
         result.Result.Should().BeOfType<NotFound>();
     }
@@ -178,19 +521,22 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
         db.Topics.Add(new Topic
         {
             Id = id,
             Title = "Title",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = dbUser.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
 
+        var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("", null, "OPEN");
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, db);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
@@ -200,51 +546,212 @@ public class TopicEndpointsTests
     {
         var db = CreateInMemoryDb();
         var id = Guid.NewGuid().ToString();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
         db.Topics.Add(new Topic
         {
             Id = id,
             Title = "Title",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = dbUser.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
 
+        var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("Title", null, "INVALID");
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, db);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
+
+        result.Result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task UpdateTopic_ReturnsBadRequest_WhenTryingToReopenClosedTopic()
+    {
+        var db = CreateInMemoryDb();
+        var id = Guid.NewGuid().ToString();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
+
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Title",
+            Status = TopicStatus.CLOSED,
+            OwnerId = dbUser.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+        var request = new UpdateTopicRequest("New Title", "New Desc", "OPEN");
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, db);
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
 
     // DELETE /topics/{id}
     [Fact]
-    public async Task DeleteTopic_ReturnsNoContent_WhenTopicExists()
+    public async Task DeleteTopic_ReturnsOk_WithMessage_WhenTopicExistsAndUserIsOwner()
     {
         var db = CreateInMemoryDb();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
+        var id = Guid.NewGuid().ToString();
+        
+        db.Topics.Add(new Topic
+        {
+            Id = id,
+            Title = "Topic to delete",
+            Status = TopicStatus.OPEN,
+            OwnerId = dbUser.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+        var result = await TopicEndpoints.HandleDeleteTopic(id, user, db);
+
+        var ok = result.Result.Should().BeOfType<Ok<object>>().Subject;
+        ok.Value.Should().NotBeNull();
+        ok.Value!.ToString().Should().Contain("deleted all related ideas and votes");
+    }
+
+    [Fact]
+    public async Task DeleteTopic_DeletesAssociatedIdeasAndVotes()
+    {
+        var db = CreateInMemoryDb();
+        var login = "owner";
+        var dbUser = await SeedUser(db, login);
+        var topicId = Guid.NewGuid().ToString();
+
+        db.Topics.Add(new Topic
+        {
+            Id = topicId,
+            Title = "Topic to delete",
+            Status = TopicStatus.OPEN,
+            OwnerId = dbUser.Id,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        var idea1 = new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = topicId,
+            OwnerId = Guid.NewGuid(),
+            Title = "Idea 1",
+            Description = "Desc",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        var idea2 = new Idea
+        {
+            Id = Guid.NewGuid(),
+            TopicId = topicId,
+            OwnerId = Guid.NewGuid(),
+            Title = "Idea 2",
+            Description = "Desc",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.Ideas.AddRange(idea1, idea2);
+        db.Votes.Add(new Vote { Id = Guid.NewGuid(), IdeaId = idea1.Id, UserId = Guid.NewGuid(), CreatedAt = DateTime.UtcNow, IsUpvote = true });
+        db.Votes.Add(new Vote { Id = Guid.NewGuid(), IdeaId = idea2.Id, UserId = Guid.NewGuid(), CreatedAt = DateTime.UtcNow, IsUpvote = true });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal(login);
+        var result = await TopicEndpoints.HandleDeleteTopic(topicId, user, db);
+
+        result.Result.Should().BeOfType<Ok<object>>();
+        (await db.Topics.FindAsync(topicId)).Should().BeNull();
+        (await db.Ideas.Where(i => i.TopicId == topicId).ToListAsync()).Should().BeEmpty();
+        (await db.Votes.ToListAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeleteTopic_ReturnsForbid_WhenUserIdentityMissing()
+    {
+        var db = CreateInMemoryDb();
+        var topicId = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = topicId,
+            Title = "Topic",
+            Status = TopicStatus.OPEN,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = new ClaimsPrincipal(new ClaimsIdentity());
+        var result = await TopicEndpoints.HandleDeleteTopic(topicId, user, db);
+
+        result.Result.Should().BeOfType<ForbidHttpResult>();
+    }
+
+    [Fact]
+    public async Task DeleteTopic_ReturnsForbid_WhenUserNotFoundInDatabase()
+    {
+        var db = CreateInMemoryDb();
+        var topicId = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = topicId,
+            Title = "Topic",
+            Status = TopicStatus.OPEN,
+            OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var user = TestHelpers.CreateClaimsPrincipal("missing-user");
+        var result = await TopicEndpoints.HandleDeleteTopic(topicId, user, db);
+
+        result.Result.Should().BeOfType<ForbidHttpResult>();
+    }
+
+    [Fact]
+    public async Task DeleteTopic_ReturnsForbid_WhenUserIsNotOwner()
+    {
+        var db = CreateInMemoryDb();
+        var ownerLogin = "owner";
+        var otherLogin = "other";
+        var owner = await SeedUser(db, ownerLogin);
+        await SeedUser(db, otherLogin);
+
         var id = Guid.NewGuid().ToString();
         db.Topics.Add(new Topic
         {
             Id = id,
             Title = "Topic to delete",
             Status = TopicStatus.OPEN,
-            CreatedBy = Guid.NewGuid().ToString(),
+            OwnerId = owner.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleDeleteTopic(id, db);
+        var user = TestHelpers.CreateClaimsPrincipal(otherLogin);
+        var result = await TopicEndpoints.HandleDeleteTopic(id, user, db);
 
-        result.Result.Should().BeOfType<NoContent>();
+        result.Result.Should().BeOfType<ForbidHttpResult>();
     }
 
     [Fact]
     public async Task DeleteTopic_ReturnsNotFound_WhenTopicDoesNotExist()
     {
         var db = CreateInMemoryDb();
+        var login = "testuser";
+        await SeedUser(db, login);
+        var user = TestHelpers.CreateClaimsPrincipal(login);
 
-        var result = await TopicEndpoints.HandleDeleteTopic(Guid.NewGuid().ToString(), db);
+        var result = await TopicEndpoints.HandleDeleteTopic(Guid.NewGuid().ToString(), user, db);
 
         result.Result.Should().BeOfType<NotFound>();
     }

@@ -17,20 +17,15 @@ cd cis-phase2-crowdsourced-ideation
 
 ## 3. Setting Up the Database
 
-> ⚠️ **If you already have the `cis-mysql-phase1` container running from Phase 1**, run the script manually:
-> ```powershell
-> Get-Content init.sql | docker exec -i cis-mysql-phase1 mysql -u sd3user -psd3pass sd3
-> ```
-> Then verify the tables were created:
-> ```bash
-> docker exec -i cis-mysql-phase1 mysql -u sd3user -psd3pass sd3 -e "SHOW TABLES;"
-> ```
-> You should see: `ideas`, `topics`, `users`, `votes`.
-
-If starting fresh:
+To start the database fresh:
 ```bash
 docker compose up -d
 ```
+
+> ⚠️ **To apply changes to init.sql, you must run:**
+> ```bash
+> docker compose down -v && docker compose up -d
+> ```
 
 Verify the container is running:
 ```bash
@@ -69,17 +64,36 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
          }'
 ```
 
-3. Copy the returned token and use it in the `Authorization: Bearer <token>` header for all Topics endpoints.
+3. Copy the returned token and use it in the `Authorization: Bearer <token>` header for protected Topics endpoints.
 
 ## 6. Testing the API
 
-All `/topics` endpoints require a valid JWT token. Use Swagger UI or the curl examples below.
+GET operations on `/topics` are **public**. All write operations (POST, PUT, DELETE) require a valid JWT token. Ownership rules apply to PUT and DELETE.
 
-### 6.1. POST /topics — Create a Topic
+### 6.0. Note About Legacy Database Schema
+
+The local MySQL schema is defined in `init.sql` and is treated as legacy-compatible.
+
+- Topic columns map 1:1 to the API model.
+- Ideas are stored in the `ideas` table with a single `content` (TEXT) column. The API still exposes `title`, `description`, and `isWinning`; these fields are serialized into `ideas.content` as JSON so the public API contract remains unchanged.
+
+If you inspect the database directly, expect `ideas.content` to look like:
+```json
+{"title":"My Idea","description":"Some details","isWinning":false}
+```
+
+Ideas endpoints:
+- `GET /api/ideas` and `GET /api/ideas/{id}` are **public** (no JWT required).
+- `GET /api/ideas/topic/{topicId}` is **public** and returns all ideas for a given topic (or `[]` if none).
+- All write operations on `/api/ideas` require JWT, and only the owner can update/delete their idea.
+- You cannot create an idea for a `CLOSED` topic (403 Forbidden).
+- If the related topic is `CLOSED`, updating or deleting an idea returns `403 Forbidden` with: `This topic is closed. No modifications allowed.`
+
+### 6.1. POST /api/topics — Create a Topic
 ```bash
 TOKEN="your_jwt_token_here"
 
-curl -X POST http://localhost:5257/topics \
+curl -X POST http://localhost:5257/api/topics \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
@@ -95,18 +109,16 @@ curl -X POST http://localhost:5257/topics \
   "title": "My First Topic",
   "description": "A topic for new ideas",
   "status": "OPEN",
-  "createdBy": "user-uuid",
+  "ownerId": "user-uuid",
   "createdAt": "2026-03-30T00:00:00Z",
-  "updatedAt": "2026-03-30T00:00:00Z"
+  "updatedAt": "2026-03-30T00:00:00Z",
+  "winningIdea": null
 }
 ```
 
-### 6.2. GET /topics — Get All Topics
+### 6.2. GET /api/topics — Get All Topics (Public)
 ```bash
-TOKEN="your_jwt_token_here"
-
-curl http://localhost:5257/topics \
-     -H "Authorization: Bearer $TOKEN"
+curl http://localhost:5257/api/topics
 ```
 
 **Expected Response (200 OK):**
@@ -117,31 +129,30 @@ curl http://localhost:5257/topics \
     "title": "My First Topic",
     "description": "A topic for new ideas",
     "status": "OPEN",
-    "createdBy": "user-uuid",
+    "ownerId": "user-uuid",
     "createdAt": "2026-03-30T00:00:00Z",
-    "updatedAt": "2026-03-30T00:00:00Z"
+    "updatedAt": "2026-03-30T00:00:00Z",
+    "winningIdea": null
   }
 ]
 ```
 
-### 6.3. GET /topics/{id} — Get Topic by ID
+### 6.3. GET /api/topics/{id} — Get Topic by ID (Public)
 ```bash
-TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
 
-curl http://localhost:5257/topics/$TOPIC_ID \
-     -H "Authorization: Bearer $TOKEN"
+curl http://localhost:5257/api/topics/$TOPIC_ID
 ```
 
 **Expected Response (200 OK):** Topic object.
 **Expected Response (404 Not Found):** Topic does not exist.
 
-### 6.4. PUT /topics/{id} — Update a Topic
+### 6.4. PUT /api/topics/{id} — Update a Topic (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
 
-curl -X PUT http://localhost:5257/topics/$TOPIC_ID \
+curl -X PUT http://localhost:5257/api/topics/$TOPIC_ID \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
@@ -153,19 +164,75 @@ curl -X PUT http://localhost:5257/topics/$TOPIC_ID \
 
 **Expected Response (200 OK):** Updated topic object.
 **Expected Response (404 Not Found):** Topic does not exist.
+**Expected Response (403 Forbidden):** You are not authorized to modify this topic.
 **Expected Response (400 Bad Request):** Invalid data.
 
-### 6.5. DELETE /topics/{id} — Delete a Topic
+Note: If you update a topic and set `status` to `CLOSED`, the response includes an `X-Info` header indicating the topic cannot be reopened. Once closed, attempts to set `status` back to `OPEN` will return `400 Bad Request`.
+When a topic is `CLOSED`, `GET /api/topics` and `GET /api/topics/{id}` will include `winningIdea` if an idea is marked with `isWinning=true`.
+
+### 6.5. DELETE /api/topics/{id} — Delete a Topic (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
 
-curl -X DELETE http://localhost:5257/topics/$TOPIC_ID \
+curl -X DELETE http://localhost:5257/api/topics/$TOPIC_ID \
      -H "Authorization: Bearer $TOKEN"
 ```
 
-**Expected Response (204 No Content)**
+**Expected Response (200 OK):** A confirmation message indicating the topic (and all related ideas/votes) were deleted.
 **Expected Response (404 Not Found):** Topic does not exist.
+**Expected Response (403 Forbidden):** You are not authorized to modify this topic.
+
+### 6.6. POST /api/ideas — Create an Idea (Authenticated)
+```bash
+TOKEN="your_jwt_token_here"
+TOPIC_ID="generated-uuid"
+
+curl -X POST http://localhost:5257/api/ideas \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "topicId": "'"$TOPIC_ID"'",
+           "title": "My Idea",
+           "description": "Some details"
+         }'
+```
+
+### 6.6a. GET /api/ideas/topic/{topicId} — Get Ideas by Topic (Public)
+```bash
+TOPIC_ID="generated-uuid"
+
+curl http://localhost:5257/api/ideas/topic/$TOPIC_ID
+```
+
+**Expected Response (200 OK):** An array of ideas. If the topic does not exist (or has no ideas), the response is `[]`.
+
+### 6.7. PUT /api/ideas/{id} — Update an Idea (Owner only)
+```bash
+TOKEN="your_jwt_token_here"
+IDEA_ID="generated-uuid"
+
+curl -X PUT http://localhost:5257/api/ideas/$IDEA_ID \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "title": "Updated title",
+           "description": "Updated description"
+         }'
+```
+
+### 6.8. DELETE /api/ideas/{id} — Delete an Idea (Owner only)
+```bash
+TOKEN="your_jwt_token_here"
+IDEA_ID="generated-uuid"
+
+curl -X DELETE http://localhost:5257/api/ideas/$IDEA_ID \
+     -H "Authorization: Bearer $TOKEN"
+```
+
+**Expected Response (200 OK):** A confirmation message indicating the idea (and all related votes) were deleted.
+**Expected Response (404 Not Found):** Idea does not exist.
+**Expected Response (403 Forbidden):** You are not authorized to modify this idea, or the topic is closed.
 
 ## 7. Running Tests
 ```bash
@@ -174,10 +241,12 @@ dotnet test
 
 To generate a coverage report:
 ```bash
-dotnet test --collect:"XPlat Code Coverage"
+dotnet clean
+rm -rf test/TestResults coverage-report
+dotnet test --collect:"XPlat Code Coverage" --results-directory test/TestResults
 dotnet tool restore
 dotnet tool run reportgenerator \
-  -reports:"test/**/TestResults/**/coverage.cobertura.xml" \
+  -reports:"test/TestResults/**/coverage.cobertura.xml" \
   -targetdir:"coverage-report" \
   -reporttypes:Html
 ```
@@ -187,21 +256,8 @@ Open `coverage-report/index.html` to view the report.
 ## 8. Common Issues
 
 - **401 Unauthorized**: Verify your token is valid and not expired. Check the `Authorization: Bearer <token>` header format.
+- **403 Forbidden**: You are trying to update or delete a topic that was created by another user.
 - **404 Not Found on Topics**: Ensure the topic ID exists in the database.
 - **400 Bad Request**: Check that `title` is not empty and does not exceed 200 characters. For updates, `status` must be `OPEN` or `CLOSED`.
 - **Database Connection Error**: Ensure the Docker container `cis-mysql-phase1` is running on port `3307`.
 - **Port Conflict**: If port `5257` is in use, check `launchSettings.json` to update the port.
-
-## 9. Voting on Ideas
-
-### 9.1. POST /api/ideas/{ideaId}/votes — Cast a Vote
-
-Cast a vote on a specific idea. Each user can only vote once per idea.
-
-```bash
-TOKEN="your_jwt_token_here"
-IDEA_ID="idea-uuid-here"
-
-curl -X POST http://localhost:5257/api/ideas/$IDEA_ID/votes \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json"
