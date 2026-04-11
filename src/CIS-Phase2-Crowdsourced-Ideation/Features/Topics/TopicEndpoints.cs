@@ -217,13 +217,55 @@ public static class TopicEndpoints
         if (topic.Status == TopicStatus.CLOSED && parsedStatus == TopicStatus.OPEN)
             return TypedResults.BadRequest<object>(new { error = TopicCannotBeReopenedMessage });
 
+        var wasOpen = topic.Status == TopicStatus.OPEN;
+
         topic.Title = request.Title.Trim();
         topic.Description = request.Description?.Trim();
         topic.Status = parsedStatus;
         topic.UpdatedAt = DateTime.UtcNow;
 
+        if (wasOpen && parsedStatus == TopicStatus.CLOSED)
+        {
+            await MarkWinningIdeaAsync(db, topicId: topic.Id);
+        }
+
         await db.SaveChangesAsync();
         return TypedResults.Ok(ToResponse(topic));
+    }
+
+    private static async Task MarkWinningIdeaAsync(AppDbContext db, string topicId)
+    {
+        // Winning idea rule (US 2.2):
+        // When a topic is CLOSED, set IsWinning=true for the idea with the most votes.
+        // Since IsWinning is stored inside ideas.content JSON, we must materialize ideas first.
+        var ideas = await db.Ideas
+            .Where(i => i.TopicId == topicId)
+            .ToListAsync();
+
+        if (ideas.Count == 0)
+            return;
+
+        var ideaIds = ideas.Select(i => i.Id).ToList();
+
+        var counts = await db.Votes
+            .AsNoTracking()
+            .Where(v => ideaIds.Contains(v.IdeaId))
+            .GroupBy(v => v.IdeaId)
+            .Select(g => new { IdeaId = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var countsByIdeaId = counts.ToDictionary(x => x.IdeaId, x => x.Count);
+
+        var winner = ideas
+            .OrderByDescending(i => countsByIdeaId.GetValueOrDefault(i.Id, 0))
+            .ThenBy(i => i.CreatedAt)
+            .ThenBy(i => i.Id)
+            .First();
+
+        foreach (var idea in ideas)
+        {
+            idea.IsWinning = idea.Id == winner.Id;
+        }
     }
 
     private static async Task<Results<Ok<TopicResponse>, NotFound, BadRequest<object>, ForbidHttpResult>> UpdateTopicWithInfoHeader(

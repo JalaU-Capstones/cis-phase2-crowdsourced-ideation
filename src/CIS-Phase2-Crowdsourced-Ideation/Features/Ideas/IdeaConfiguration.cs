@@ -52,38 +52,3 @@ public class IdeaConfiguration : IEntityTypeConfiguration<Idea>
                .OnDelete(DeleteBehavior.Cascade);
     }
 }
-
-public class VoteConfiguration : IEntityTypeConfiguration<Vote>
-{
-    public void Configure(EntityTypeBuilder<Vote> builder)
-    {
-        builder.ToTable("votes");
-
-        builder.HasKey(v => v.Id);
-        builder.Property(v => v.Id)
-            .HasColumnName("id")
-            .HasMaxLength(36)
-            .HasConversion(v => v.ToString(), v => Guid.Parse(v));
-
-        builder.Property(v => v.IdeaId)
-            .HasColumnName("idea_id")
-            .HasMaxLength(36)
-            .HasConversion(v => v.ToString(), v => Guid.Parse(v))
-            .IsRequired();
-
-        builder.Property(v => v.UserId)
-            .HasColumnName("user_id")
-            .HasMaxLength(36)
-            .HasConversion(v => v.ToString(), v => Guid.Parse(v))
-            .IsRequired();
-
-        builder.HasIndex(v => new { v.IdeaId, v.UserId })
-            .IsUnique()
-            .HasDatabaseName("uq_votes_idea_user");
-
-        builder.HasOne(v => v.Idea)
-            .WithMany(i => i.Votes)
-            .HasForeignKey(v => v.IdeaId)
-            .OnDelete(DeleteBehavior.Cascade);
-    }
-}

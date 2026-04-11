@@ -1,5 +1,6 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
+using CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 using Microsoft.EntityFrameworkCore;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;

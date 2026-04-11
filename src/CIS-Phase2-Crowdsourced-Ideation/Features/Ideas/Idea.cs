@@ -1,4 +1,5 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
+using CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -166,22 +167,4 @@ public class Idea
 
         return false;
     }
-}
-
-public class Vote
-{
-    public Guid Id { get; set; }
-    public Guid IdeaId { get; set; }
-    public Guid UserId { get; set; }
-
-    // Not part of the legacy `votes` table schema; kept for API/tests compatibility.
-    [NotMapped]
-    public bool IsUpvote { get; set; }
-
-    // Not part of the legacy `votes` table schema; kept for API/tests compatibility.
-    [NotMapped]
-    public DateTime CreatedAt { get; set; }
-
-    // Navigation properties
-    public Idea Idea { get; set; } = null!;
 }

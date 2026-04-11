@@ -1,6 +1,7 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
+using CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -659,8 +660,8 @@ public class TopicEndpointsTests
             UpdatedAt = DateTime.UtcNow
         };
         db.Ideas.AddRange(idea1, idea2);
-        db.Votes.Add(new Vote { Id = Guid.NewGuid(), IdeaId = idea1.Id, UserId = Guid.NewGuid(), CreatedAt = DateTime.UtcNow, IsUpvote = true });
-        db.Votes.Add(new Vote { Id = Guid.NewGuid(), IdeaId = idea2.Id, UserId = Guid.NewGuid(), CreatedAt = DateTime.UtcNow, IsUpvote = true });
+        db.Votes.Add(new Vote { Id = Guid.NewGuid(), IdeaId = idea1.Id, UserId = Guid.NewGuid() });
+        db.Votes.Add(new Vote { Id = Guid.NewGuid(), IdeaId = idea2.Id, UserId = Guid.NewGuid() });
         await db.SaveChangesAsync();
 
         var user = TestHelpers.CreateClaimsPrincipal(login);

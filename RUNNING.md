@@ -234,6 +234,70 @@ curl -X DELETE http://localhost:5257/api/ideas/$IDEA_ID \
 **Expected Response (404 Not Found):** Idea does not exist.
 **Expected Response (403 Forbidden):** You are not authorized to modify this idea, or the topic is closed.
 
+## 6.9. Votes (US 2.2)
+
+Votes allow authenticated users to vote on one or more ideas of the same topic. A user can only vote once per idea (enforced by a unique constraint in the database).
+
+Important rules:
+- `GET` vote endpoints are **public** (no JWT required).
+- `POST/PUT/DELETE` vote endpoints require JWT.
+- If the idea's topic is `CLOSED`, voting (create/update/delete) is forbidden and returns `403 Forbidden` with: `This topic is closed. Voting is no longer allowed.`
+- Only the owner of a vote can modify/delete it; otherwise returns `403 Forbidden` with: `You can only modify or delete your own vote.`
+
+### 6.9.1. GET /api/votes — Get All Votes (Public)
+```bash
+curl http://localhost:5257/api/votes
+```
+
+### 6.9.2. GET /api/votes/idea/{ideaId} — Get Votes for an Idea (Public)
+```bash
+IDEA_ID="generated-uuid"
+curl http://localhost:5257/api/votes/idea/$IDEA_ID
+```
+
+### 6.9.3. GET /api/votes/{voteId} — Get a Vote by ID (Public)
+```bash
+VOTE_ID="generated-uuid"
+curl http://localhost:5257/api/votes/$VOTE_ID
+```
+
+### 6.9.4. POST /api/votes — Cast a Vote (Authenticated)
+```bash
+TOKEN="your_jwt_token_here"
+IDEA_ID="generated-uuid"
+
+curl -X POST http://localhost:5257/api/votes \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "ideaId": "'"$IDEA_ID"'"
+         }'
+```
+
+### 6.9.5. PUT /api/votes/{voteId} — Update a Vote (Owner only)
+This endpoint updates the vote to point to a different idea. If you already voted for the target idea, the API returns `409 Conflict`.
+```bash
+TOKEN="your_jwt_token_here"
+VOTE_ID="generated-uuid"
+NEW_IDEA_ID="generated-uuid"
+
+curl -X PUT http://localhost:5257/api/votes/$VOTE_ID \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "ideaId": "'"$NEW_IDEA_ID"'"
+         }'
+```
+
+### 6.9.6. DELETE /api/votes/{voteId} — Delete a Vote (Owner only)
+```bash
+TOKEN="your_jwt_token_here"
+VOTE_ID="generated-uuid"
+
+curl -X DELETE http://localhost:5257/api/votes/$VOTE_ID \
+     -H "Authorization: Bearer $TOKEN"
+```
+
 ## 7. Running Tests
 ```bash
 dotnet test

@@ -1,73 +1,163 @@
-using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-using CIS.Phase2.CrowdsourcedIdeation.Features.Ideas;
 
-namespace CIS.Phase2.CrowdsourcedIdeation.Features.Votes;
+namespace CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 
 public static class VoteEndpoints
 {
     public static IEndpointRouteBuilder MapVoteEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/ideas")
-            .WithTags("Votes")
+        var group = endpoints.MapGroup("/api/votes")
+            .WithTags("Votes");
+
+        // Public read access (no JWT required)
+        group.MapGet("/", HandleGetAllVotes)
+            .WithName("GetAllVotes")
+            .WithSummary("Get all votes (public)")
+            .WithDescription("Public endpoint. Returns votes including idea and topic details.")
+            .Produces<IReadOnlyList<VoteResponse>>(StatusCodes.Status200OK);
+
+        group.MapGet("/idea/{ideaId:guid}", HandleGetVotesByIdea)
+            .WithName("GetVotesByIdea")
+            .WithSummary("Get votes for an idea (public)")
+            .WithDescription("Public endpoint. Returns votes for a specific idea, including idea and topic details.")
+            .Produces<IReadOnlyList<VoteResponse>>(StatusCodes.Status200OK);
+
+        group.MapGet("/{voteId:guid}", HandleGetVoteById)
+            .WithName("GetVoteById")
+            .WithSummary("Get a vote by id (public)")
+            .WithDescription("Public endpoint. Returns a vote including idea and topic details.")
+            .Produces<VoteResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        // Protected write access (JWT required)
+        var protectedGroup = group.MapGroup("/")
             .RequireAuthorization();
-        
-        group.MapPost("/{ideaId}/votes", HandleCastVote);
-        
+
+        protectedGroup.MapPost("/", HandleCastVote)
+            .WithName("CastVote")
+            .WithSummary("Cast a vote for an idea (authenticated)")
+            .WithDescription("""
+                Requires authentication.
+                Business rules:
+                - One vote per user per idea (duplicate votes return 409 Conflict).
+                - If the idea's topic is CLOSED, returns 403 Forbidden with: "This topic is closed. Voting is no longer allowed."
+                """)
+            .Produces<VoteResponse>(StatusCodes.Status201Created)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status409Conflict);
+
+        protectedGroup.MapPut("/{voteId:guid}", HandleUpdateVote)
+            .WithName("UpdateVote")
+            .WithSummary("Update a vote (owner only)")
+            .WithDescription("""
+                Requires authentication.
+                Only the vote owner can modify their vote.
+                If the current or target idea belongs to a CLOSED topic, returns 403 Forbidden with: "This topic is closed. Voting is no longer allowed."
+                """)
+            .Produces<VoteResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status409Conflict);
+
+        protectedGroup.MapDelete("/{voteId:guid}", HandleDeleteVote)
+            .WithName("DeleteVote")
+            .WithSummary("Delete a vote (owner only)")
+            .WithDescription("""
+                Requires authentication.
+                Only the vote owner can delete their vote.
+                If the vote's idea belongs to a CLOSED topic, returns 403 Forbidden with: "This topic is closed. Voting is no longer allowed."
+                """)
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound);
+
         return endpoints;
     }
-    
-    public static async Task<Results<Ok<VoteResponse>, NotFound<ErrorResponse>, Conflict<ErrorResponse>, UnauthorizedHttpResult>> 
-        HandleCastVote(
-            string ideaId,
-            ClaimsPrincipal user,
-            AppDbContext db)
+
+    internal static async Task<Ok<IReadOnlyList<VoteResponse>>> HandleGetAllVotes(IVoteService service)
+        => TypedResults.Ok(await service.GetAllAsync());
+
+    internal static async Task<Ok<IReadOnlyList<VoteResponse>>> HandleGetVotesByIdea(Guid ideaId, IVoteService service)
+        => TypedResults.Ok(await service.GetByIdeaIdAsync(ideaId));
+
+    internal static async Task<Results<Ok<VoteResponse>, NotFound>> HandleGetVoteById(Guid voteId, IVoteService service)
     {
-        var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (login is null)
-            return TypedResults.Unauthorized();
-        
-        var userRecord = await db.Users
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Login == login);
-        
-        if (userRecord is null)
-            return TypedResults.Unauthorized();
-        
-        var idea = await db.Set<Idea>().FindAsync(ideaId);
-        if (idea is null)
-            return TypedResults.NotFound(new ErrorResponse($"Idea with ID '{ideaId}' not found"));
-        
-        var existingVote = await db.Set<Vote>()
-            .AnyAsync(v => v.IdeaId == ideaId && v.UserId == userRecord.Id);
-        
-        if (existingVote)
-            return TypedResults.Conflict(new ErrorResponse(
-                $"User '{userRecord.Login}' has already voted on idea '{ideaId}'",
-                "DUPLICATE_VOTE"));
-        
-        var vote = new Vote
+        var vote = await service.GetByIdAsync(voteId);
+        return vote is null ? TypedResults.NotFound() : TypedResults.Ok(vote);
+    }
+
+    internal static async Task<IResult> HandleCastVote(CastVoteRequest request, IVoteService service, ClaimsPrincipal user)
+    {
+        try
         {
-            IdeaId = ideaId,
-            UserId = userRecord.Id,
-            CreatedAt = DateTime.UtcNow
-        };
-        
-        await db.Set<Vote>().AddAsync(vote);
-        
-        idea.VoteCount++;
-        
-        await db.SaveChangesAsync();
-        
-        var response = new VoteResponse(
-            vote.Id,
-            vote.IdeaId,
-            vote.UserId,
-            vote.CreatedAt
-        );
-        
-        return TypedResults.Ok(response);
+            var created = await service.CastVoteAsync(request, user);
+            return TypedResults.Created($"/api/votes/{created.Id}", created);
+        }
+        catch (VoteUnauthorizedException)
+        {
+            return TypedResults.Unauthorized();
+        }
+        catch (VoteForbiddenException ex)
+        {
+            return TypedResults.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+        catch (VoteNotFoundException ex)
+        {
+            return TypedResults.NotFound(new { error = ex.Message });
+        }
+        catch (VoteConflictException ex)
+        {
+            return TypedResults.Conflict(new ErrorResponse(ex.Message, "DUPLICATE_VOTE"));
+        }
+    }
+
+    internal static async Task<IResult> HandleUpdateVote(Guid voteId, UpdateVoteRequest request, IVoteService service, ClaimsPrincipal user)
+    {
+        try
+        {
+            var updated = await service.UpdateVoteAsync(voteId, request, user);
+            return updated is null ? TypedResults.NotFound() : TypedResults.Ok(updated);
+        }
+        catch (VoteUnauthorizedException)
+        {
+            return TypedResults.Unauthorized();
+        }
+        catch (VoteForbiddenException ex)
+        {
+            return TypedResults.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+        catch (VoteNotFoundException ex)
+        {
+            return TypedResults.NotFound(new { error = ex.Message });
+        }
+        catch (VoteConflictException ex)
+        {
+            return TypedResults.Conflict(new ErrorResponse(ex.Message, "DUPLICATE_VOTE"));
+        }
+    }
+
+    internal static async Task<IResult> HandleDeleteVote(Guid voteId, IVoteService service, ClaimsPrincipal user)
+    {
+        try
+        {
+            var deleted = await service.DeleteVoteAsync(voteId, user);
+            return deleted
+                ? TypedResults.Ok(new { message = "Vote deleted.", voteId })
+                : TypedResults.NotFound();
+        }
+        catch (VoteUnauthorizedException)
+        {
+            return TypedResults.Unauthorized();
+        }
+        catch (VoteForbiddenException ex)
+        {
+            return TypedResults.Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
     }
 }

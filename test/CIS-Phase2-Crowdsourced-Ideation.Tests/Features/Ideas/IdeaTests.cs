@@ -1,4 +1,5 @@
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
+using CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Http;
@@ -325,8 +326,8 @@ public class IdeaServiceTests
         _context.Topics.Add(new Topic { Id = topicId, Title = "Topic 1" });
         var ownerId = Guid.NewGuid();
         var idea = new Idea { Id = Guid.NewGuid(), TopicId = topicId, OwnerId = ownerId, Title = "Test Idea", Description = "Desc", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
-        var vote1 = new Vote { Id = Guid.NewGuid(), IdeaId = idea.Id, UserId = Guid.NewGuid(), IsUpvote = true, CreatedAt = DateTime.UtcNow };
-        var vote2 = new Vote { Id = Guid.NewGuid(), IdeaId = idea.Id, UserId = Guid.NewGuid(), IsUpvote = false, CreatedAt = DateTime.UtcNow };
+        var vote1 = new Vote { Id = Guid.NewGuid(), IdeaId = idea.Id, UserId = Guid.NewGuid() };
+        var vote2 = new Vote { Id = Guid.NewGuid(), IdeaId = idea.Id, UserId = Guid.NewGuid() };
         _context.Set<Idea>().Add(idea);
         _context.Set<Vote>().AddRange(vote1, vote2);
         await _context.SaveChangesAsync();
