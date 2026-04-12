@@ -298,6 +298,29 @@ curl -X DELETE http://localhost:5257/api/votes/$VOTE_ID \
      -H "Authorization: Bearer $TOKEN"
 ```
 
+## 6.10. Statistics (US 3.3) (Public)
+
+All statistics endpoints are **public** (no JWT required) and support pagination where applicable.
+
+### 6.10.1. GET /api/statistics/top-topics?limit=10&offset=0
+Returns topics ordered by total votes across all ideas in the topic (descending).
+```bash
+curl "http://localhost:5257/api/statistics/top-topics?limit=10&offset=0"
+```
+
+### 6.10.2. GET /api/statistics/most-voted-ideas?limit=10&offset=0
+Returns ideas ordered by vote count (descending), including the idea's topic details.
+```bash
+curl "http://localhost:5257/api/statistics/most-voted-ideas?limit=10&offset=0"
+```
+
+### 6.10.3. GET /api/statistics/topic/{topicId}/summary
+Returns aggregated statistics for a single topic.
+```bash
+TOPIC_ID="generated-uuid"
+curl "http://localhost:5257/api/statistics/topic/$TOPIC_ID/summary"
+```
+
 ## 7. Running Tests
 ```bash
 dotnet test
