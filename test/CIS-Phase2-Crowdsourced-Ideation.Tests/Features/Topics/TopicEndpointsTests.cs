@@ -102,12 +102,12 @@ public class TopicEndpointsTests
 
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
 
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().HaveCount(1);
-        ok.Value!.First().WinningIdea.Should().NotBeNull();
-        ok.Value!.First().WinningIdea!.Title.Should().Be("Winner");
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().HaveCount(1);
+        ok.Value!.Data.First().WinningIdea.Should().NotBeNull();
+        ok.Value!.Data.First().WinningIdea!.Title.Should().Be("Winner");
     }
 
     [Fact]
@@ -142,11 +142,11 @@ public class TopicEndpointsTests
 
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
 
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().HaveCount(1);
-        ok.Value!.First().WinningIdea.Should().BeNull();
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().HaveCount(1);
+        ok.Value!.Data.First().WinningIdea.Should().BeNull();
     }
 
     [Fact]
@@ -179,11 +179,11 @@ public class TopicEndpointsTests
 
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
 
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().HaveCount(1);
-        ok.Value!.First().WinningIdea.Should().BeNull();
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().HaveCount(1);
+        ok.Value!.Data.First().WinningIdea.Should().BeNull();
     }
 
     // GET /topics/{id}
