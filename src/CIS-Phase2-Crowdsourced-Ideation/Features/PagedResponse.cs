@@ -1,4 +1,4 @@
-namespace CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
+namespace CIS.Phase2.CrowdsourcedIdeation.Features;
 
 /// <summary>
 /// Generic wrapper for paginated list responses.

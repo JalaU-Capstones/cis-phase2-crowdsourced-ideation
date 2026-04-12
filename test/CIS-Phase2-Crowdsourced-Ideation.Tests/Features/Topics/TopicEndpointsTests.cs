@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using CIS.Phase2.CrowdsourcedIdeation.Features;
 using Xunit;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Topics;

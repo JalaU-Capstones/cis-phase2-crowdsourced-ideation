@@ -2,13 +2,14 @@ using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using CIS.Phase2.CrowdsourcedIdeation.Features;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 
 public interface IIdeaService
 {
     Task<IdeaResponse> CreateIdeaAsync(CreateIdeaRequest request, ClaimsPrincipal user);
-    Task<IEnumerable<IdeaResponse>> GetAllIdeasAsync();
+    Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(int? page, int? size, string? sortBy, string? order);
     Task<IdeaResponse?> GetIdeaByIdAsync(Guid id);
     Task<IEnumerable<IdeaResponse>> GetIdeasByTopicIdAsync(string topicId);
     Task<IdeaResponse?> UpdateIdeaAsync(Guid id, UpdateIdeaRequest request, ClaimsPrincipal user);
@@ -79,13 +80,56 @@ public class IdeaService(AppDbContext context) : IIdeaService
         return idea == null ? null : MapToResponse(idea);
     }
 
-    public async Task<IEnumerable<IdeaResponse>> GetAllIdeasAsync()
+    public async Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(int? page, int? size, string? sortBy, string? order)
     {
-        var ideas = await context.Set<Idea>()
-            .AsNoTracking()
-            .OrderByDescending(i => i.UpdatedAt)
+        // 1. Validate pagination
+        var currentPage = page ?? 0;
+        var pageSize    = size ?? 10;
+
+        if (currentPage < 0)
+            throw new ArgumentException("page must be >= 0.");
+        if (pageSize <= 0)
+            throw new ArgumentException("size must be >= 1.");
+
+        // 2. Validate sorting
+        var validSortFields = new[] { "updatedAt" };
+        var validOrders     = new[] { "asc", "desc" };
+
+        var sortField = sortBy ?? "updatedAt";
+        var sortOrder = order  ?? "desc";
+
+        if (!validSortFields.Contains(sortField))
+            throw new ArgumentException($"sortBy must be one of: {string.Join(", ", validSortFields)}.");
+        if (!validOrders.Contains(sortOrder))
+            throw new ArgumentException($"order must be 'asc' or 'desc'.");
+
+        // 3. Query base
+        var query = context.Set<Idea>().AsNoTracking().AsQueryable();
+
+        // 4. Apply sorting
+        query = (sortField, sortOrder) switch
+        {
+            ("updatedAt", "asc")  => query.OrderBy(i => i.UpdatedAt),
+            _                     => query.OrderByDescending(i => i.UpdatedAt),
+        };
+
+        // 5. Count total BEFORE pagination
+        var totalItems = await query.CountAsync();
+        var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize);
+
+        // 6. Aplly pagination
+        var ideas = await query
+            .Skip(currentPage * pageSize)
+            .Take(pageSize)
             .ToListAsync();
-        return ideas.Select(MapToResponse);
+
+        return new PagedResponse<IdeaResponse>(
+            Data:        ideas.Select(MapToResponse),
+            CurrentPage: currentPage,
+            PageSize:    pageSize,
+            TotalItems:  totalItems,
+            TotalPages:  totalPages
+        );
     }
 
     public async Task<IEnumerable<IdeaResponse>> GetIdeasByTopicIdAsync(string topicId)
