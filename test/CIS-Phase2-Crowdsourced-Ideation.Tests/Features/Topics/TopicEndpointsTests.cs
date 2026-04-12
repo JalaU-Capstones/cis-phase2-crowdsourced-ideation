@@ -36,15 +36,16 @@ public class TopicEndpointsTests
     }
 
     // GET /topics
-    [Fact]
+   [Fact]
     public async Task GetAllTopics_ReturnsOk_WithEmptyList()
     {
         var db = CreateInMemoryDb();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
 
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().BeEmpty();
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().BeEmpty();
+        ok.Value.TotalItems.Should().Be(0);
     }
 
     [Fact]
@@ -63,11 +64,11 @@ public class TopicEndpointsTests
         });
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
 
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().HaveCount(1);
-        ok.Value!.First().Title.Should().Be("Topic A");
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.TotalItems.Should().Be(1);
+        ok.Value.Data.First().Title.Should().Be("Topic A");
     }
 
     [Fact]
@@ -756,4 +757,339 @@ public class TopicEndpointsTests
 
         result.Result.Should().BeOfType<NotFound>();
     }
+    // --- PAGINATION ---
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsPaginatedResponse_WithDefaultValues()
+    {
+        var db = CreateInMemoryDb();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.CurrentPage.Should().Be(0);
+        ok.Value.PageSize.Should().Be(10);
+        ok.Value.TotalItems.Should().Be(0);
+        ok.Value.TotalPages.Should().Be(0);
+        ok.Value.Data.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsPaginatedResponse_WithCustomPageAndSize()
+    {
+        var db = CreateInMemoryDb();
+        for (int i = 0; i < 15; i++)
+            db.Topics.Add(new Topic
+            {
+                Id = Guid.NewGuid().ToString(), Title = $"Topic {i}",
+                Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, page: 1, size: 5, null, null, null, null);
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.CurrentPage.Should().Be(1);
+        ok.Value.PageSize.Should().Be(5);
+        ok.Value.TotalItems.Should().Be(15);
+        ok.Value.TotalPages.Should().Be(3);
+        ok.Value.Data.Should().HaveCount(5);
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsBadRequest_WhenPageIsNegative()
+    {
+        var db = CreateInMemoryDb();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, page: -1, size: 10, null, null, null, null);
+
+        result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsBadRequest_WhenSizeIsZero()
+    {
+        var db = CreateInMemoryDb();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, page: 0, size: 0, null, null, null, null);
+
+        result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsBadRequest_WhenSizeIsNegative()
+    {
+        var db = CreateInMemoryDb();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, page: 0, size: -5, null, null, null, null);
+
+        result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsLastPage_WhenPageExceedsTotalPages()
+    {
+        var db = CreateInMemoryDb();
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Only Topic",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, page: 99, size: 10, null, null, null, null);
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().BeEmpty();
+        ok.Value.TotalItems.Should().Be(1);
+    }
+
+    // --- FILTERING ---
+
+    [Fact]
+    public async Task GetAllTopics_FiltersByStatus_ReturnsOnlyMatchingTopics()
+    {
+        var db = CreateInMemoryDb();
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Open Topic",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Closed Topic",
+            Status = TopicStatus.CLOSED, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, status: "OPEN", null, null, null);
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.TotalItems.Should().Be(1);
+        ok.Value.Data.Should().OnlyContain(t => t.Status == "OPEN");
+    }
+
+    [Fact]
+    public async Task GetAllTopics_FiltersByOwnerId_ReturnsOnlyMatchingTopics()
+    {
+        var db = CreateInMemoryDb();
+        var ownerId = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Owner Topic",
+            Status = TopicStatus.OPEN, OwnerId = ownerId,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Other Topic",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, ownerId: ownerId, null, null);
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.TotalItems.Should().Be(1);
+        ok.Value.Data.Should().OnlyContain(t => t.OwnerId == ownerId);
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsEmptyList_WhenFilterMatchesNoRecords()
+    {
+        var db = CreateInMemoryDb();
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Open Topic",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, status: "CLOSED", null, null, null);
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.TotalItems.Should().Be(0);
+        ok.Value.Data.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsBadRequest_WhenStatusIsInvalid()
+    {
+        var db = CreateInMemoryDb();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, status: "INVALID", null, null, null);
+
+        result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task GetAllTopics_FiltersByStatusAndOwnerId_WhenBothProvided()
+    {
+        var db = CreateInMemoryDb();
+        var ownerId = Guid.NewGuid().ToString();
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Match",
+            Status = TopicStatus.OPEN, OwnerId = ownerId,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Wrong Status",
+            Status = TopicStatus.CLOSED, OwnerId = ownerId,
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Wrong Owner",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, status: "OPEN", ownerId: ownerId, null, null);
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.TotalItems.Should().Be(1);
+        ok.Value.Data.First().Title.Should().Be("Match");
+    }
+
+    // --- SORTING ---
+
+    [Fact]
+    public async Task GetAllTopics_SortsByCreatedAtDesc_ByDefault()
+    {
+        var db = CreateInMemoryDb();
+        var baseTime = DateTime.UtcNow;
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Older",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = baseTime.AddHours(-2), UpdatedAt = baseTime.AddHours(-2)
+        });
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Newer",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = baseTime, UpdatedAt = baseTime
+        });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.First().Title.Should().Be("Newer");
+    }
+
+    [Fact]
+    public async Task GetAllTopics_SortsByTitleAsc_WhenSortByTitleAndOrderAsc()
+    {
+        var db = CreateInMemoryDb();
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Zebra",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Apple",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, sortBy: "title", order: "asc");
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.First().Title.Should().Be("Apple");
+    }
+
+    [Fact]
+    public async Task GetAllTopics_SortsByUpdatedAtAsc_WhenRequested()
+    {
+        var db = CreateInMemoryDb();
+        var baseTime = DateTime.UtcNow;
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Updated Recently",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = baseTime, UpdatedAt = baseTime
+        });
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Updated Long Ago",
+            Status = TopicStatus.OPEN, OwnerId = Guid.NewGuid().ToString(),
+            CreatedAt = baseTime, UpdatedAt = baseTime.AddHours(-5)
+        });
+        await db.SaveChangesAsync();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, sortBy: "updatedAt", order: "asc");
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.First().Title.Should().Be("Updated Long Ago");
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsBadRequest_WhenSortByIsInvalid()
+    {
+        var db = CreateInMemoryDb();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, sortBy: "invalid", null);
+
+        result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    [Fact]
+    public async Task GetAllTopics_ReturnsBadRequest_WhenOrderIsInvalid()
+    {
+        var db = CreateInMemoryDb();
+
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, order: "invalid");
+
+        result.Should().BeOfType<BadRequest<object>>();
+    }
+
+    // --- COMBINED ---
+
+    [Fact]
+    public async Task GetAllTopics_AppliesFilterThenSortThenPagination_WhenAllParamsProvided()
+    {
+        var db = CreateInMemoryDb();
+        var ownerId = Guid.NewGuid().ToString();
+        var baseTime = DateTime.UtcNow;
+
+        // 3 OPEN topics from our owner, 1 CLOSED (should be filtered out)
+        for (int i = 0; i < 3; i++)
+            db.Topics.Add(new Topic
+            {
+                Id = Guid.NewGuid().ToString(), Title = $"Topic {(char)('C' - i)}", // C, B, A
+                Status = TopicStatus.OPEN, OwnerId = ownerId,
+                CreatedAt = baseTime.AddMinutes(i), UpdatedAt = baseTime.AddMinutes(i)
+            });
+        db.Topics.Add(new Topic
+        {
+            Id = Guid.NewGuid().ToString(), Title = "Closed Topic",
+            Status = TopicStatus.CLOSED, OwnerId = ownerId,
+            CreatedAt = baseTime, UpdatedAt = baseTime
+        });
+        await db.SaveChangesAsync();
+
+        // Filter: OPEN + ownerId | Sort: title asc | Page: 0, size: 2
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            db, page: 0, size: 2, status: "OPEN", ownerId: ownerId, sortBy: "title", order: "asc");
+
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.TotalItems.Should().Be(3);   // 3 OPEN after filter
+        ok.Value.TotalPages.Should().Be(2);    // ceil(3/2)
+        ok.Value.Data.Should().HaveCount(2);   // page 0 with size 2
+        ok.Value.Data.First().Title.Should().Be("Topic A"); // sorted asc
+    }
 }
+

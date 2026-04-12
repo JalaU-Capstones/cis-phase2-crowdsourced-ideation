@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 
@@ -28,24 +29,26 @@ public static class TopicEndpoints
             .WithTags("Topics");
 
         // Public read access
-        group.MapGet("/", HandleGetAllTopics)
-            .WithName("GetAllTopics")
-            .WithSummary("Get all topics (public)")
-            .WithDescription("""
-                Public endpoint. Returns all topics.
-                When a topic is CLOSED, the response includes the winning idea (the idea with IsWinning=true), if present.
-                """)
-            .Produces<IEnumerable<TopicResponse>>(StatusCodes.Status200OK);
+group.MapGet("/", (AppDbContext db,
+    [FromQuery] int? page, [FromQuery] int? size,
+    [FromQuery] string? status, [FromQuery] string? ownerId,
+    [FromQuery] string? sortBy, [FromQuery] string? order) =>
+    HandleGetAllTopics(db, page, size, status, ownerId, sortBy, order))
+    .WithName("GetAllTopics")
+    .WithSummary("Get all topics (public)")
+    .WithDescription("Public endpoint. Returns paginated topics with filtering and sorting support.")
+    .Produces<PagedResponse<TopicResponse>>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status400BadRequest);
 
-        group.MapGet("/{id}", HandleGetTopicById)
-            .WithName("GetTopicById")
-            .WithSummary("Get topic by id (public)")
-            .WithDescription("""
-                Public endpoint. Returns a topic by its id.
-                When a topic is CLOSED, the response includes the winning idea (the idea with IsWinning=true), if present.
-                """)
-            .Produces<TopicResponse>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound);
+group.MapGet("/{id}", HandleGetTopicById)
+    .WithName("GetTopicById")
+    .WithSummary("Get topic by id (public)")
+    .WithDescription("""
+        Public endpoint. Returns a topic by its id.
+        When a topic is CLOSED, the response includes the winning idea (the idea with IsWinning=true), if present.
+        """)
+    .Produces<TopicResponse>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound);
 
         // Protected write access
         var protectedGroup = group.MapGroup("/")
@@ -87,35 +90,107 @@ public static class TopicEndpoints
     /// <summary>
     /// Retrieves all topics.
     /// </summary>
-    public static async Task<Ok<IEnumerable<TopicResponse>>> HandleGetAllTopics(AppDbContext db)
+   public static async Task<IResult> HandleGetAllTopics(
+    AppDbContext db,
+    int? page, int? size,
+    string? status, string? ownerId,
+    string? sortBy, string? order)
+{
+    // 1. Validar paginación
+    var currentPage = page ?? 0;
+    var pageSize    = size ?? 10;
+
+    if (currentPage < 0)
+        return TypedResults.BadRequest<object>(new { error = "page must be >= 0." });
+    if (pageSize <= 0)
+        return TypedResults.BadRequest<object>(new { error = "size must be >= 1." });
+
+    // 2. Validar sorting
+    var validSortFields = new[] { "createdAt", "title", "updatedAt" };
+    var validOrders     = new[] { "asc", "desc" };
+
+    var sortField = sortBy ?? "createdAt";
+    var sortOrder = order  ?? "desc";
+
+    if (!validSortFields.Contains(sortField))
+        return TypedResults.BadRequest<object>(new { error = $"sortBy must be one of: {string.Join(", ", validSortFields)}." });
+    if (!validOrders.Contains(sortOrder))
+        return TypedResults.BadRequest<object>(new { error = $"order must be 'asc' or 'desc'." });
+
+    // 3. Validar filtering
+    TopicStatus? parsedStatus = null;
+    if (status is not null)
     {
-        var topics = await db.Topics.AsNoTracking().ToListAsync();
-
-        var closedTopicIds = topics
-            .Where(t => t.Status == TopicStatus.CLOSED)
-            .Select(t => t.Id)
-            .ToList();
-
-        Dictionary<string, WinningIdeaResponse?> winnersByTopicId = new();
-        if (closedTopicIds.Count > 0)
-        {
-            // NOTE: IsWinning is stored inside ideas.content JSON (legacy schema). We must evaluate it in-memory.
-            var ideasForClosedTopics = await db.Ideas
-                .AsNoTracking()
-                .Where(i => closedTopicIds.Contains(i.TopicId))
-                .ToListAsync();
-
-            winnersByTopicId = ideasForClosedTopics
-                .Where(i => i.IsWinning)
-                .GroupBy(i => i.TopicId)
-                .ToDictionary(
-                    g => g.Key,
-                    g => (WinningIdeaResponse?)MapToWinningIdeaResponse(g.First()));
-        }
-
-        return TypedResults.Ok(topics.Select(t =>
-            ToResponse(t, t.Status == TopicStatus.CLOSED ? winnersByTopicId.GetValueOrDefault(t.Id) : null)));
+        if (!Enum.TryParse<TopicStatus>(status, ignoreCase: true, out var s))
+            return TypedResults.BadRequest<object>(new { error = "status must be 'OPEN' or 'CLOSED'." });
+        parsedStatus = s;
     }
+
+    // 4. Query base
+    var query = db.Topics.AsNoTracking().AsQueryable();
+
+    // 5. Aplicar filtros
+    if (parsedStatus is not null)
+        query = query.Where(t => t.Status == parsedStatus.Value);
+    if (!string.IsNullOrWhiteSpace(ownerId))
+        query = query.Where(t => t.OwnerId == ownerId);
+
+    // 6. Aplicar sorting
+    query = (sortField, sortOrder) switch
+    {
+        ("title",     "asc")  => query.OrderBy(t => t.Title),
+        ("title",     "desc") => query.OrderByDescending(t => t.Title),
+        ("updatedAt", "asc")  => query.OrderBy(t => t.UpdatedAt),
+        ("updatedAt", "desc") => query.OrderByDescending(t => t.UpdatedAt),
+        ("createdAt", "asc")  => query.OrderBy(t => t.CreatedAt),
+        _                     => query.OrderByDescending(t => t.CreatedAt),
+    };
+
+    // 7. Contar total ANTES de paginar
+    var totalItems = await query.CountAsync();
+    var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize);
+
+    // 8. Aplicar paginación
+    var topics = await query
+        .Skip(currentPage * pageSize)
+        .Take(pageSize)
+        .ToListAsync();
+
+    // 9. Winning idea para topics CLOSED (lógica de main)
+    var closedTopicIds = topics
+        .Where(t => t.Status == TopicStatus.CLOSED)
+        .Select(t => t.Id)
+        .ToList();
+
+    Dictionary<string, WinningIdeaResponse?> winnersByTopicId = new();
+    if (closedTopicIds.Count > 0)
+    {
+        var ideasForClosedTopics = await db.Ideas
+            .AsNoTracking()
+            .Where(i => closedTopicIds.Contains(i.TopicId))
+            .ToListAsync();
+
+        winnersByTopicId = ideasForClosedTopics
+            .Where(i => i.IsWinning)
+            .GroupBy(i => i.TopicId)
+            .ToDictionary(
+                g => g.Key,
+                g => (WinningIdeaResponse?)MapToWinningIdeaResponse(g.First()));
+    }
+
+    var response = new PagedResponse<TopicResponse>(
+        Data:        topics.Select(t =>
+            ToResponse(t, t.Status == TopicStatus.CLOSED
+                ? winnersByTopicId.GetValueOrDefault(t.Id)
+                : null)),
+        CurrentPage: currentPage,
+        PageSize:    pageSize,
+        TotalItems:  totalItems,
+        TotalPages:  totalPages
+    );
+
+    return TypedResults.Ok(response);
+}
 
     /// <summary>
     /// Retrieves a topic by its unique identifier.
