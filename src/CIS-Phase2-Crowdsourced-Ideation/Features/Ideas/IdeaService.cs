@@ -18,6 +18,8 @@ public interface IIdeaService
 
 public class IdeaService(AppDbContext context) : IIdeaService
 {
+    private static readonly string[] ValidSortFields = ["updatedAt"];
+    private static readonly string[] ValidOrders = ["asc", "desc"];
     private async Task<Guid> ResolveUserIdAsync(ClaimsPrincipal user)
     {
         var raw = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -92,16 +94,13 @@ public class IdeaService(AppDbContext context) : IIdeaService
             throw new ArgumentException("size must be >= 1.");
 
         // 2. Validate sorting
-        var validSortFields = new[] { "updatedAt" };
-        var validOrders     = new[] { "asc", "desc" };
-
         var sortField = sortBy ?? "updatedAt";
         var sortOrder = order  ?? "desc";
 
-        if (!validSortFields.Contains(sortField))
-            throw new ArgumentException($"sortBy must be one of: {string.Join(", ", validSortFields)}.");
-        if (!validOrders.Contains(sortOrder))
-            throw new ArgumentException($"order must be 'asc' or 'desc'.");
+        if (!ValidSortFields.Contains(sortField))
+        throw new ArgumentException($"sortBy must be one of: {string.Join(", ", ValidSortFields)}.");
+        if (!ValidOrders.Contains(sortOrder))
+        throw new ArgumentException($"order must be 'asc' or 'desc'.");
 
         // 3. Query base
         var query = context.Set<Idea>().AsNoTracking().AsQueryable();

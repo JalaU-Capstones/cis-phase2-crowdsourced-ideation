@@ -19,6 +19,8 @@ public static class TopicEndpoints
     private const string StatusErrorMessage = "Status must be 'OPEN' or 'CLOSED'.";
     private const string TopicCannotBeReopenedMessage = "This topic is closed and cannot be reopened.";
     private const string UserIdErrorMessage = "User identity not found or invalid.";
+    private static readonly string[] ValidSortFields = ["createdAt", "title", "updatedAt"];
+    private static readonly string[] ValidOrders = ["asc", "desc"];
 
     /// <summary>
     /// Maps topic endpoints to the routing system.
@@ -106,16 +108,13 @@ group.MapGet("/{id}", HandleGetTopicById)
         return TypedResults.BadRequest<object>(new { error = "size must be >= 1." });
 
     // 2. Validar sorting
-    var validSortFields = new[] { "createdAt", "title", "updatedAt" };
-    var validOrders     = new[] { "asc", "desc" };
-
     var sortField = sortBy ?? "createdAt";
     var sortOrder = order  ?? "desc";
 
-    if (!validSortFields.Contains(sortField))
-        return TypedResults.BadRequest<object>(new { error = $"sortBy must be one of: {string.Join(", ", validSortFields)}." });
-    if (!validOrders.Contains(sortOrder))
-        return TypedResults.BadRequest<object>(new { error = $"order must be 'asc' or 'desc'." });
+    if (!ValidSortFields.Contains(sortField))
+    return TypedResults.BadRequest<object>(new { error = $"sortBy must be one of: {string.Join(", ", ValidSortFields)}." });
+    if (!ValidOrders.Contains(sortOrder))
+    return TypedResults.BadRequest<object>(new { error = $"order must be 'asc' or 'desc'." });
 
     // 3. Validar filtering
     TopicStatus? parsedStatus = null;
