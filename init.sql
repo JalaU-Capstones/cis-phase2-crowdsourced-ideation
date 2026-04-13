@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS topics (
     owner_id VARCHAR(36) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_topics_users FOREIGN KEY (owner_id) REFERENCES users(id)
+    CONSTRAINT fk_topics_users FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS ideas(
@@ -42,8 +42,8 @@ CREATE TABLE IF NOT EXISTS ideas(
     owner_id VARCHAR(36) NOT NULL COMMENT 'Only the owner/creator can edit or delete this idea',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_ideas_topics FOREIGN KEY (topic_id) REFERENCES topics(id),
-    CONSTRAINT fk_ideas_owner FOREIGN KEY (owner_id) REFERENCES users(id)
+    CONSTRAINT fk_ideas_topics FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ideas_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS votes(
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS votes(
     PRIMARY KEY (id),
     idea_id VARCHAR(36) NOT NULL,
     user_id VARCHAR(36) NOT NULL,
-    CONSTRAINT fk_votes_ideas FOREIGN KEY (idea_id) REFERENCES ideas(id),
-    CONSTRAINT fk_votes_users FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT fk_votes_ideas FOREIGN KEY (idea_id) REFERENCES ideas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_votes_users FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE KEY uq_votes_idea_user (idea_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
