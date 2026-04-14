@@ -1,3 +1,4 @@
+using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
@@ -177,6 +178,9 @@ public sealed class VoteService(AppDbContext db) : IVoteService
         return true;
     }
 
+    /// <summary>
+    /// Maps a Vote entity to a VoteResponse DTO including HATEOAS links (US 3.2 - AC-8 / AC-9).
+    /// </summary>
     private static VoteResponse MapToResponse(Vote v) =>
         new(
             v.Id,
@@ -184,5 +188,8 @@ public sealed class VoteService(AppDbContext db) : IVoteService
             v.Idea.Title,
             v.Idea.TopicId,
             v.Idea.Topic.Title
-        );
+        )
+        {
+            Links = HateoasBuilder.ForVote(v.Id, v.IdeaId)
+        };
 }

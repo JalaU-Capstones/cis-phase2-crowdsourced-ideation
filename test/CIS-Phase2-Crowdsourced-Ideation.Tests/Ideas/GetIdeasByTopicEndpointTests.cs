@@ -115,7 +115,7 @@ public sealed class GetIdeasByTopicEndpointTests
         ideas.Should().NotBeNull();
         ideas!.Should().HaveCount(1);
         var idea = ideas!.Single();
-        idea.Should().Be(new IdeaResponse(
+        var expectedIdea = new IdeaResponse(
             ideaId,
             topicId,
             ownerId,
@@ -124,6 +124,9 @@ public sealed class GetIdeasByTopicEndpointTests
             createdAt,
             updatedAt,
             true
-        ));
+        );
+        
+        idea.Should().BeEquivalentTo(expectedIdea, options => 
+            options.Excluding(i => i.Links));
     }
 }
