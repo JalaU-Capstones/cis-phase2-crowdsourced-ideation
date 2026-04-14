@@ -1,8 +1,9 @@
+using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
+using CIS.Phase2.CrowdsourcedIdeation.Features;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-using CIS.Phase2.CrowdsourcedIdeation.Features;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 
@@ -73,13 +74,23 @@ public class IdeaService(AppDbContext context) : IIdeaService
         context.Set<Idea>().Add(idea);
         await context.SaveChangesAsync();
 
-        return MapToResponse(idea);
+        // Topic is OPEN at this point (CLOSED would have thrown above).
+        return MapToResponse(idea, topicIsOpen: true);
     }
 
     public async Task<IdeaResponse?> GetIdeaByIdAsync(Guid id)
     {
         var idea = await context.Set<Idea>().FindAsync(id);
-        return idea == null ? null : MapToResponse(idea);
+        if (idea is null) return null;
+
+        // Fetch topic status to determine whether to include the 'vote' link 
+        var topicStatus = await context.Topics
+            .AsNoTracking()
+            .Where(t => t.Id == idea.TopicId)
+            .Select(t => (TopicStatus?)t.Status)
+            .FirstOrDefaultAsync();
+
+        return MapToResponse(idea, topicIsOpen: topicStatus == TopicStatus.OPEN);
     }
 
     public async Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(int? page, int? size, string? sortBy, string? order)
@@ -122,8 +133,18 @@ public class IdeaService(AppDbContext context) : IIdeaService
             .Take(pageSize)
             .ToListAsync();
 
+        // 7. Batch-fetch topic statuses to build HATEOAS links (US 3.2) without N+1 queries.
+        var topicIds = ideas.Select(i => i.TopicId).Distinct().ToList();
+        var topicStatuses = topicIds.Count > 0
+            ? await context.Topics
+                .AsNoTracking()
+                .Where(t => topicIds.Contains(t.Id))
+                .ToDictionaryAsync(t => t.Id, t => t.Status)
+            : new Dictionary<string, TopicStatus>();
+
         return new PagedResponse<IdeaResponse>(
-            Data:        ideas.Select(MapToResponse),
+            Data:        ideas.Select(i =>
+                MapToResponse(i, topicIsOpen: topicStatuses.TryGetValue(i.TopicId, out var s) && s == TopicStatus.OPEN)),
             CurrentPage: currentPage,
             PageSize:    pageSize,
             TotalItems:  totalItems,
@@ -137,7 +158,16 @@ public class IdeaService(AppDbContext context) : IIdeaService
             .AsNoTracking()
             .Where(i => i.TopicId == topicId)
             .ToListAsync();
-        return ideas.Select(MapToResponse);
+
+        // Fetch topic status once for the whole set (US 3.2).
+        var topicStatus = await context.Topics
+            .AsNoTracking()
+            .Where(t => t.Id == topicId)
+            .Select(t => (TopicStatus?)t.Status)
+            .FirstOrDefaultAsync();
+
+        var isOpen = topicStatus == TopicStatus.OPEN;
+        return ideas.Select(i => MapToResponse(i, topicIsOpen: isOpen));
     }
 
     public async Task<IdeaResponse?> UpdateIdeaAsync(Guid id, UpdateIdeaRequest request, ClaimsPrincipal user)
@@ -175,7 +205,9 @@ public class IdeaService(AppDbContext context) : IIdeaService
         idea.UpdatedAt = now <= idea.UpdatedAt ? idea.UpdatedAt.AddTicks(1) : now;
 
         await context.SaveChangesAsync();
-        return MapToResponse(idea);
+
+        // Topic is OPEN at this point (CLOSED would have thrown above).
+        return MapToResponse(idea, topicIsOpen: true);
     }
 
     public async Task<bool> DeleteIdeaAsync(Guid id, ClaimsPrincipal user)
@@ -218,7 +250,11 @@ public class IdeaService(AppDbContext context) : IIdeaService
         return true;
     }
 
-    private static IdeaResponse MapToResponse(Idea idea) =>
+    /// <summary>
+    /// Maps an Idea entity to an IdeaResponse DTO including HATEOAS links (US 3.2).
+    /// <paramref name="topicIsOpen"/> controls whether the 'vote' link is included.
+    /// </summary>
+    private static IdeaResponse MapToResponse(Idea idea, bool topicIsOpen) =>
         new IdeaResponse(
             idea.Id,
             idea.TopicId,
@@ -228,5 +264,8 @@ public class IdeaService(AppDbContext context) : IIdeaService
             idea.CreatedAt,
             idea.UpdatedAt,
             idea.IsWinning
-        );
+        )
+        {
+            Links = HateoasBuilder.ForIdea(idea.Id, idea.TopicId, topicIsOpen)
+        };
 }

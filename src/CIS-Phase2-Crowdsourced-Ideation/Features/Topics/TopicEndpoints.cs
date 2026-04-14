@@ -1,4 +1,5 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
+using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -432,9 +433,13 @@ group.MapGet("/{id}", HandleGetTopicById)
 
     /// <summary>
     /// Converts a <see cref="Topic"/> entity to a <see cref="TopicResponse"/> DTO.
+    /// Includes HATEOAS links (US 3.2).
     /// </summary>
     internal static TopicResponse ToResponse(Topic t, WinningIdeaResponse? winningIdea = null) =>
-        new(t.Id, t.Title, t.Description, t.Status.ToString(), t.OwnerId, t.CreatedAt, t.UpdatedAt, winningIdea);
+        new(t.Id, t.Title, t.Description, t.Status.ToString(), t.OwnerId, t.CreatedAt, t.UpdatedAt, winningIdea)
+        {
+            Links = HateoasBuilder.ForTopic(t.Id, t.Status.ToString())
+        };
 
     private static WinningIdeaResponse MapToWinningIdeaResponse(Idea idea) =>
         new(idea.Id, idea.TopicId, idea.OwnerId, idea.Title, idea.Description, idea.CreatedAt, idea.UpdatedAt, idea.IsWinning);
