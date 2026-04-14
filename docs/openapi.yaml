@@ -74,6 +74,34 @@ components:
       description: Vote ID
       example: "770e8400-e29b-41d4-a716-446655440000"
 
+    # Pagination Parameters
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Page number (starting from 0)
+    
+    SizeParam:
+      name: size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 10
+      description: Number of items per page
+
+    SortOrderParam:
+      name: order
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
+      description: Sort order
+
   responses:
     BadRequest:
       description: Invalid data or business rule violation
@@ -203,6 +231,22 @@ components:
           type: object
           description: Placeholder for HATEOAS links
 
+    PagedTopicResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicResponse'
+        currentPage:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+
     CreateTopicRequest:
       type: object
       required:
@@ -282,6 +326,22 @@ components:
         _links:
           type: object
           description: Placeholder for HATEOAS links
+
+    PagedIdeaResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdeaResponse'
+        currentPage:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
 
     CreateIdeaRequest:
       type: object
@@ -378,15 +438,37 @@ paths:
       tags:
         - Topics
       summary: Get all topics (public)
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [OPEN, CLOSED]
+          description: Filter by status
+        - name: ownerId
+          in: query
+          schema:
+            type: string
+          description: Filter by owner user ID
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, title, updatedAt]
+            default: createdAt
+          description: Field to sort by
+        - $ref: '#/components/parameters/SortOrderParam'
       responses:
         '200':
-          description: List of topics
+          description: Paged list of topics
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TopicResponse'
+                $ref: '#/components/schemas/PagedTopicResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
     post:
       tags:
@@ -483,15 +565,26 @@ paths:
       tags:
         - Ideas
       summary: Get all ideas (public)
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [updatedAt]
+            default: updatedAt
+          description: Field to sort by
+        - $ref: '#/components/parameters/SortOrderParam'
       responses:
         '200':
-          description: List of ideas
+          description: Paged list of ideas
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/IdeaResponse'
+                $ref: '#/components/schemas/PagedIdeaResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
     post:
       tags:
