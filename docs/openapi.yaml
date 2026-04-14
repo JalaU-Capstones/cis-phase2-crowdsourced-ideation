@@ -9,7 +9,10 @@ info:
     - A user can vote only once per idea (unique vote)
     - Votes can only be cast when the topic is OPEN
     - Users can change/remove their vote while the topic is OPEN
-    - When a topic is CLOSED, the winning idea can be determined
+    - When a topic is CLOSED, the winning idea is determined automatically based on vote count.
+    - Once a topic is CLOSED, it cannot be reopened.
+    - Ownership rules apply to updating and deleting topics, ideas, and votes.
+    - Deleting a topic cascades and deletes all related ideas and votes.
   version: 2.0.0
   contact:
     name: CIS Phase2 Team
@@ -17,10 +20,8 @@ info:
     name: MIT
 
 servers:
-  - url: https://localhost:5001
-    description: Development server
-  - url: https://api.cis-phase2.com/v1
-    description: Production server
+  - url: http://localhost:5257
+    description: Local development server
 
 tags:
   - name: Topics
@@ -29,6 +30,8 @@ tags:
     description: Idea management within topics
   - name: Votes
     description: Idea voting operations
+  - name: Statistics
+    description: Analytical data and summaries
 
 # ========================
 # REUSABLE COMPONENTS
@@ -39,7 +42,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT token obtained from authentication endpoint
+      description: JWT token obtained from Phase 1 User Management API
 
   parameters:
     TopicId:
@@ -48,18 +51,7 @@ components:
       required: true
       schema:
         type: string
-        format: uuid
-      description: Topic ID
-      example: "550e8400-e29b-41d4-a716-446655440000"
-    
-    TopicIdParam:
-      name: topicId
-      in: path
-      required: true
-      schema:
-        type: string
-        format: uuid
-      description: Topic ID
+      description: Topic ID (UUID string)
       example: "550e8400-e29b-41d4-a716-446655440000"
     
     IdeaId:
@@ -71,6 +63,44 @@ components:
         format: uuid
       description: Idea ID
       example: "660e8400-e29b-41d4-a716-446655440000"
+
+    VoteId:
+      name: voteId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Vote ID
+      example: "770e8400-e29b-41d4-a716-446655440000"
+
+    # Pagination Parameters
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Page number (starting from 0)
+    
+    SizeParam:
+      name: size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 10
+      description: Number of items per page
+
+    SortOrderParam:
+      name: order
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
+      description: Sort order
 
   responses:
     BadRequest:
@@ -87,8 +117,22 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     
+    Forbidden:
+      description: Access denied due to ownership or business rules (e.g. closed topic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
     NotFound:
       description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Conflict:
+      description: Resource conflict (e.g. duplicate vote)
       content:
         application/json:
           schema:
@@ -98,13 +142,14 @@ components:
     # ----- Error Responses -----
     ErrorResponse:
       type: object
-      required:
-        - error
       properties:
         error:
           type: string
-          example: "Validation error message"
-      additionalProperties: false
+          example: "Detailed error message"
+        message:
+          type: string
+          example: "Error summary"
+      additionalProperties: true
 
     # ----- Topic Models -----
     TopicStatus:
@@ -114,8 +159,35 @@ components:
         - CLOSED
       description: |
         - OPEN: Ideas can be created and votes can be cast
-        - CLOSED: No more ideas/votes accepted, winner can be determined
+        - CLOSED: No more ideas/votes accepted, winning idea is displayed
       example: OPEN
+
+    WinningIdeaResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        topicId:
+          type: string
+        ownerId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        isWinning:
+          type: boolean
+        _links:
+          type: object
+          description: Placeholder for HATEOAS links
 
     TopicResponse:
       type: object
@@ -123,13 +195,12 @@ components:
         - id
         - title
         - status
-        - createdBy
+        - ownerId
         - createdAt
         - updatedAt
       properties:
         id:
           type: string
-          format: uuid
           example: "550e8400-e29b-41d4-a716-446655440000"
         title:
           type: string
@@ -141,9 +212,8 @@ components:
           example: "Proposals to optimize the interface"
         status:
           $ref: '#/components/schemas/TopicStatus'
-        createdBy:
+        ownerId:
           type: string
-          format: uuid
           description: Creator user ID
           example: "550e8400-e29b-41d4-a716-446655440001"
         createdAt:
@@ -154,6 +224,28 @@ components:
           type: string
           format: date-time
           example: "2026-03-30T15:30:00Z"
+        winningIdea:
+          $ref: '#/components/schemas/WinningIdeaResponse'
+          nullable: true
+        _links:
+          type: object
+          description: Placeholder for HATEOAS links
+
+    PagedTopicResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicResponse'
+        currentPage:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
 
     CreateTopicRequest:
       type: object
@@ -195,29 +287,31 @@ components:
       type: object
       required:
         - id
-        - content
         - topicId
-        - createdBy
+        - ownerId
+        - title
+        - description
         - createdAt
         - updatedAt
-        - voteCount
+        - isWinning
       properties:
         id:
           type: string
           format: uuid
           example: "660e8400-e29b-41d4-a716-446655440000"
-        content:
-          type: string
-          description: Idea content/description
-          example: "Implement dark mode across the entire application"
         topicId:
           type: string
-          format: uuid
           example: "550e8400-e29b-41d4-a716-446655440000"
-        createdBy:
+        ownerId:
           type: string
           format: uuid
           example: "550e8400-e29b-41d4-a716-446655440001"
+        title:
+          type: string
+          example: "Implement dark mode"
+        description:
+          type: string
+          example: "Offer a dark theme for all users"
         createdAt:
           type: string
           format: date-time
@@ -226,34 +320,59 @@ components:
           type: string
           format: date-time
           example: "2026-03-30T11:30:00Z"
-        voteCount:
+        isWinning:
+          type: boolean
+          example: false
+        _links:
+          type: object
+          description: Placeholder for HATEOAS links
+
+    PagedIdeaResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdeaResponse'
+        currentPage:
           type: integer
-          minimum: 0
-          description: Total number of votes received
-          example: 15
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
 
     CreateIdeaRequest:
       type: object
       required:
-        - content
+        - topicId
+        - title
+        - description
       properties:
-        content:
+        topicId:
           type: string
-          minLength: 1
-          maxLength: 1000
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        title:
+          type: string
           example: "Proposal to improve login performance"
+        description:
+          type: string
+          example: "Detailed explanation of the optimization"
       additionalProperties: false
 
     UpdateIdeaRequest:
       type: object
       required:
-        - content
+        - title
+        - description
       properties:
-        content:
+        title:
           type: string
-          minLength: 1
-          maxLength: 1000
-          example: "Updated proposal for login with 2FA"
+          example: "Updated title"
+        description:
+          type: string
+          example: "Updated description"
       additionalProperties: false
 
     # ----- Vote Models -----
@@ -262,7 +381,9 @@ components:
       required:
         - id
         - ideaId
-        - userId
+        - ideaTitle
+        - topicId
+        - topicTitle
       properties:
         id:
           type: string
@@ -272,66 +393,87 @@ components:
           type: string
           format: uuid
           example: "660e8400-e29b-41d4-a716-446655440000"
-        userId:
+        ideaTitle:
           type: string
-          format: uuid
-          example: "550e8400-e29b-41d4-a716-446655440001"
+          example: "Implement dark mode"
+        topicId:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        topicTitle:
+          type: string
+          example: "Dashboard improvements"
+        _links:
+          type: object
+          description: Placeholder for HATEOAS links
 
-    VoteCountResponse:
+    CastVoteRequest:
       type: object
       required:
         - ideaId
-        - voteCount
       properties:
         ideaId:
           type: string
           format: uuid
-        voteCount:
-          type: integer
-          example: 42
+          example: "660e8400-e29b-41d4-a716-446655440000"
+      additionalProperties: false
 
-    WinningIdeaResponse:
+    UpdateVoteRequest:
       type: object
+      required:
+        - ideaId
       properties:
-        topicId:
+        ideaId:
           type: string
           format: uuid
-        idea:
-          $ref: '#/components/schemas/IdeaResponse'
-        totalVotes:
-          type: integer
-        message:
-          type: string
-          example: "Winning idea with 127 votes"
+          example: "880e8400-e29b-41d4-a716-446655440000"
+      additionalProperties: false
 
 # ========================
 # PATHS (ENDPOINTS)
 # ========================
 paths:
   # ----- TOPICS -----
-  /topics:
+  /api/topics:
     get:
       tags:
         - Topics
-      summary: List all topics
-      security:
-        - BearerAuth: []
+      summary: Get all topics (public)
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [OPEN, CLOSED]
+          description: Filter by status
+        - name: ownerId
+          in: query
+          schema:
+            type: string
+          description: Filter by owner user ID
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, title, updatedAt]
+            default: createdAt
+          description: Field to sort by
+        - $ref: '#/components/parameters/SortOrderParam'
       responses:
         '200':
-          description: List of topics
+          description: Paged list of topics
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/TopicResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+                $ref: '#/components/schemas/PagedTopicResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
     post:
       tags:
         - Topics
-      summary: Create new topic
+      summary: Create a topic (authenticated)
       security:
         - BearerAuth: []
       requestBody:
@@ -352,13 +494,11 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /topics/{id}:
+  /api/topics/{id}:
     get:
       tags:
         - Topics
-      summary: Get topic by ID
-      security:
-        - BearerAuth: []
+      summary: Get topic by id (public)
       parameters:
         - $ref: '#/components/parameters/TopicId'
       responses:
@@ -368,15 +508,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TopicResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
     put:
       tags:
         - Topics
-      summary: Update topic
+      summary: Update a topic (owner only)
       security:
         - BearerAuth: []
       parameters:
@@ -398,96 +536,62 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
     delete:
       tags:
         - Topics
-      summary: Delete topic (cascade: deletes ideas and votes)
+      summary: Delete a topic (owner only)
       security:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/TopicId'
       responses:
-        '204':
+        '200':
           description: Topic deleted
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /topics/{topicId}/winner:
-    get:
-      tags:
-        - Topics
-      summary: Get winning idea for topic
-      description: Only applicable when topic is CLOSED
-      security:
-        - BearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/TopicIdParam'
-      responses:
-        '200':
-          description: Winning idea
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WinningIdeaResponse'
-        '400':
-          description: Topic still OPEN or no ideas
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
   # ----- IDEAS -----
-  /topics/{topicId}/ideas:
+  /api/ideas:
     get:
       tags:
         - Ideas
-      summary: List ideas for a topic
-      security:
-        - BearerAuth: []
+      summary: Get all ideas (public)
       parameters:
-        - $ref: '#/components/parameters/TopicIdParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
         - name: sortBy
           in: query
           schema:
             type: string
-            enum:
-              - votes
-              - newest
-              - oldest
-            default: votes
-          description: Sort by votes or date
+            enum: [updatedAt]
+            default: updatedAt
+          description: Field to sort by
+        - $ref: '#/components/parameters/SortOrderParam'
       responses:
         '200':
-          description: List of ideas
+          description: Paged list of ideas
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/IdeaResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                $ref: '#/components/schemas/PagedIdeaResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
     post:
       tags:
         - Ideas
-      summary: Create new idea in a topic
-      description: Only allowed when topic is OPEN
+      summary: Create an idea (authenticated)
       security:
         - BearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/TopicIdParam'
       requestBody:
         required: true
         content:
@@ -502,23 +606,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/IdeaResponse'
         '400':
-          description: Topic closed or invalid data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
-  /ideas/{id}:
+  /api/ideas/{id}:
     get:
       tags:
         - Ideas
-      summary: Get idea by ID
-      security:
-        - BearerAuth: []
+      summary: Get idea by id (public)
       parameters:
         - $ref: '#/components/parameters/IdeaId'
       responses:
@@ -528,16 +626,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IdeaResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
     put:
       tags:
         - Ideas
-      summary: Update idea
-      description: Only the author can update
+      summary: Update an idea (owner only)
       security:
         - BearerAuth: []
       parameters:
@@ -560,81 +655,79 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Unauthorized (not the creator)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
     delete:
       tags:
         - Ideas
-      summary: Delete idea (cascade: deletes votes)
-      description: Only the author can delete
+      summary: Delete an idea (owner only)
       security:
         - BearerAuth: []
       parameters:
         - $ref: '#/components/parameters/IdeaId'
       responses:
-        '204':
+        '200':
           description: Idea deleted
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Unauthorized
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
-  # ----- VOTES -----
-  /ideas/{ideaId}/votes:
+  /api/ideas/topic/{topicId}:
     get:
       tags:
-        - Votes
-      summary: Count votes for an idea
-      security:
-        - BearerAuth: []
+        - Ideas
+      summary: Get ideas by topic (public)
       parameters:
-        - name: ideaId
+        - name: topicId
           in: path
           required: true
           schema:
             type: string
-            format: uuid
-          description: Idea ID
-          example: "660e8400-e29b-41d4-a716-446655440000"
+          description: Topic ID (UUID string)
+          example: "550e8400-e29b-41d4-a716-446655440000"
       responses:
         '200':
-          description: Vote count
+          description: List of ideas for the topic
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VoteCountResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                type: array
+                items:
+                  $ref: '#/components/schemas/IdeaResponse'
+
+  # ----- VOTES -----
+  /api/votes:
+    get:
+      tags:
+        - Votes
+      summary: Get all votes (public)
+      responses:
+        '200':
+          description: List of votes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VoteResponse'
 
     post:
       tags:
         - Votes
-      summary: Vote for an idea
-      description: |
-        - Only allowed when topic is OPEN
-        - If you already voted, updates the vote (implicit PUT)
-        - One vote per user per idea
+      summary: Cast a vote (authenticated)
       security:
         - BearerAuth: []
-      parameters:
-        - name: ideaId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Idea ID
-          example: "660e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CastVoteRequest'
       responses:
         '201':
           description: Vote recorded
@@ -642,24 +735,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VoteResponse'
-        '400':
-          description: Topic closed or already voted (use PUT to update)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
-    delete:
+  /api/votes/idea/{ideaId}:
+    get:
       tags:
         - Votes
-      summary: Remove my vote from an idea
-      description: Only allowed when topic is OPEN
-      security:
-        - BearerAuth: []
+      summary: Get votes for an idea (public)
       parameters:
         - name: ideaId
           in: path
@@ -670,39 +759,127 @@ paths:
           description: Idea ID
           example: "660e8400-e29b-41d4-a716-446655440000"
       responses:
-        '204':
-          description: Vote removed
-        '400':
-          description: Topic closed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Vote not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /users/me/votes:
-    get:
-      tags:
-        - Votes
-      summary: Get my votes
-      description: Lists all ideas that the authenticated user has voted for
-      security:
-        - BearerAuth: []
-      responses:
         '200':
-          description: My votes
+          description: List of votes for the idea
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/VoteResponse'
+
+  /api/votes/{voteId}:
+    get:
+      tags:
+        - Votes
+      summary: Get a vote by ID (public)
+      parameters:
+        - $ref: '#/components/parameters/VoteId'
+      responses:
+        '200':
+          description: Vote found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Votes
+      summary: Update a vote (owner only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VoteId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVoteRequest'
+      responses:
+        '200':
+          description: Vote updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+    delete:
+      tags:
+        - Votes
+      summary: Delete a vote (owner only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VoteId'
+      responses:
+        '200':
+          description: Vote deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ----- STATISTICS -----
+  /api/statistics/top-topics:
+    get:
+      tags:
+        - Statistics
+      summary: Get top topics
+      responses:
+        '200':
+          description: List of top topics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /api/statistics/most-voted-ideas:
+    get:
+      tags:
+        - Statistics
+      summary: Get most voted ideas
+      responses:
+        '200':
+          description: List of most voted ideas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /api/statistics/topic/{topicId}/summary:
+    get:
+      tags:
+        - Statistics
+      summary: Get summary for a topic
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Topic ID
+      responses:
+        '200':
+          description: Topic summary statistics
+          content:
+            application/json:
+              schema:
+                type: object
