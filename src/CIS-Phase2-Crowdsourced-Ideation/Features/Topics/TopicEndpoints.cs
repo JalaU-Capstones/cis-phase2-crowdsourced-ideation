@@ -298,16 +298,17 @@ group.MapGet("/{id}", HandleGetTopicById)
         topic.Status = parsedStatus;
         topic.UpdatedAt = DateTime.UtcNow;
 
+        WinningIdeaResponse? winningIdea = null;
         if (wasOpen && parsedStatus == TopicStatus.CLOSED)
         {
-            await MarkWinningIdeaAsync(db, topicId: topic.Id);
+            winningIdea = await MarkWinningIdeaAsync(db, topicId: topic.Id);
         }
 
         await db.SaveChangesAsync();
-        return TypedResults.Ok(ToResponse(topic));
+        return TypedResults.Ok(ToResponse(topic, parsedStatus == TopicStatus.CLOSED ? winningIdea : null));
     }
 
-    private static async Task MarkWinningIdeaAsync(AppDbContext db, string topicId)
+    private static async Task<WinningIdeaResponse?> MarkWinningIdeaAsync(AppDbContext db, string topicId)
     {
         // Winning idea rule (US 2.2):
         // When a topic is CLOSED, set IsWinning=true for the idea with the most votes.
@@ -317,7 +318,7 @@ group.MapGet("/{id}", HandleGetTopicById)
             .ToListAsync();
 
         if (ideas.Count == 0)
-            return;
+            return null;
 
         var ideaIds = ideas.Select(i => i.Id).ToList();
 
@@ -340,6 +341,8 @@ group.MapGet("/{id}", HandleGetTopicById)
         {
             idea.IsWinning = idea.Id == winner.Id;
         }
+
+        return MapToWinningIdeaResponse(winner);
     }
 
     private static async Task<Results<Ok<TopicResponse>, NotFound, BadRequest<object>, ForbidHttpResult>> UpdateTopicWithInfoHeader(
