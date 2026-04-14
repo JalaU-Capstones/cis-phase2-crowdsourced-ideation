@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 
@@ -147,11 +148,24 @@ public static class IdeaEndpoints
         }
     }
 
-    private static async Task<IResult> GetAllIdeas(IIdeaService service)
+    private static async Task<IResult> GetAllIdeas(
+        IIdeaService service,
+        [FromQuery] int page,
+        [FromQuery] int size,
+        [FromQuery] string? sortBy,
+        [FromQuery] string? order)
     {
-        var result = await service.GetAllIdeasAsync();
-        return TypedResults.Ok(result);
+        try
+        {
+            var result = await service.GetAllIdeasAsync(page, size, sortBy, order);
+            return TypedResults.Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return TypedResults.BadRequest<object>(new { error = ex.Message });
+        }
     }
+
 
     private static async Task<IResult> GetIdea(Guid id, IIdeaService service)
     {

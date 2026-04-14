@@ -3,13 +3,14 @@ using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using CIS.Phase2.CrowdsourcedIdeation.Features;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 
 public interface IIdeaService
 {
     Task<IdeaResponse> CreateIdeaAsync(CreateIdeaRequest request, ClaimsPrincipal user);
-    Task<IEnumerable<IdeaResponse>> GetAllIdeasAsync();
+    Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(int currentPage, int pageSize, string? sortBy, string? order);
     Task<IdeaResponse?> GetIdeaByIdAsync(Guid id);
     Task<IEnumerable<IdeaResponse>> GetIdeasByTopicIdAsync(string topicId);
     Task<IdeaResponse?> UpdateIdeaAsync(Guid id, UpdateIdeaRequest request, ClaimsPrincipal user);
@@ -39,7 +40,7 @@ public class IdeaService(AppDbContext context) : IIdeaService
     public async Task<IdeaResponse> CreateIdeaAsync(CreateIdeaRequest request, ClaimsPrincipal user)
     {
         var userId = await ResolveUserIdAsync(user);
-        
+
         var topic = await context.Topics
             .AsNoTracking()
             .Where(t => t.Id == request.TopicId)
@@ -48,7 +49,7 @@ public class IdeaService(AppDbContext context) : IIdeaService
 
         if (topic is null)
         {
-             throw new ArgumentException("Topic not found");
+            throw new ArgumentException("Topic not found");
         }
 
         if (topic.Status == TopicStatus.CLOSED)
@@ -90,11 +91,30 @@ public class IdeaService(AppDbContext context) : IIdeaService
         return MapToResponse(idea, topicIsOpen);
     }
 
-    public async Task<IEnumerable<IdeaResponse>> GetAllIdeasAsync()
+    public async Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(
+        int currentPage, int pageSize,
+        string? sortBy, string? order)
     {
-        var ideas = await context.Set<Idea>()
-            .AsNoTracking()
-            .OrderByDescending(i => i.UpdatedAt)
+        var sortField = sortBy ?? "updatedAt";
+        var sortOrder = order  ?? "desc";
+
+        var query = context.Set<Idea>().AsNoTracking().AsQueryable();
+
+        // Aplicar sorting
+        query = (sortField, sortOrder) switch
+        {
+            ("createdAt", "asc")  => query.OrderBy(i => i.CreatedAt),
+            ("createdAt", "desc") => query.OrderByDescending(i => i.CreatedAt),
+            ("updatedAt", "asc")  => query.OrderBy(i => i.UpdatedAt),
+            _                     => query.OrderByDescending(i => i.UpdatedAt),
+        };
+
+        var totalItems = await query.CountAsync();
+        var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize);
+
+        var ideas = await query
+            .Skip(currentPage * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
         // Bulk-load open topic IDs to avoid N+1 queries for the conditional vote link (AC-5)
@@ -108,7 +128,13 @@ public class IdeaService(AppDbContext context) : IIdeaService
                 .ToHashSet()
             : new HashSet<string>();
 
-        return ideas.Select(i => MapToResponse(i, openTopicIds.Contains(i.TopicId)));
+        return new PagedResponse<IdeaResponse>(
+            Data:        ideas.Select(i => MapToResponse(i, openTopicIds.Contains(i.TopicId))),
+            CurrentPage: currentPage,
+            PageSize:    pageSize,
+            TotalItems:  totalItems,
+            TotalPages:  totalPages
+        );
     }
 
     public async Task<IEnumerable<IdeaResponse>> GetIdeasByTopicIdAsync(string topicId)
@@ -209,10 +235,10 @@ public class IdeaService(AppDbContext context) : IIdeaService
     }
 
     /// <summary>
-    /// Maps an Idea entity to an IdeaResponse DTO including HATEOAS links
+    /// Maps an Idea entity to an IdeaResponse DTO including HATEOAS links (US 3.2).
     /// </summary>
-    /// <param name="idea">The idea entity</param>
-    /// <param name="topicIsOpen">Whether the parent topic is OPEN. Controls the conditional vote link (AC-5)</param>
+    /// <param name="idea">The idea entity.</param>
+    /// <param name="topicIsOpen">Whether the parent topic is OPEN. Controls the conditional vote link (AC-5).</param>
     private static IdeaResponse MapToResponse(Idea idea, bool topicIsOpen = true) =>
         new IdeaResponse(
             idea.Id,
