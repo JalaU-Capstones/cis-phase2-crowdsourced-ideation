@@ -393,6 +393,11 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
         var put = await client.PutAsJsonAsync($"/api/topics/{topicId}", new UpdateTopicRequest("Topic A", "Desc", "CLOSED"));
         put.StatusCode.Should().Be(HttpStatusCode.OK);
 
+        var putBody = await put.Content.ReadFromJsonAsync<TopicResponse>();
+        putBody.Should().NotBeNull();
+        putBody!.WinningIdea.Should().NotBeNull();
+        putBody.WinningIdea!.Title.Should().Be("Idea 2");
+
         var get = await client.GetFromJsonAsync<TopicResponse>($"/api/topics/{topicId}");
         get!.Status.Should().Be("CLOSED");
         get.WinningIdea.Should().NotBeNull();

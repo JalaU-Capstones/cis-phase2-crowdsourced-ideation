@@ -117,24 +117,61 @@ curl -X POST http://localhost:5257/api/topics \
 ```
 
 ### 6.2. GET /api/topics — Get All Topics (Public)
+
+Supports pagination, filtering and sorting via query parameters.
+
+| Parameter | Default | Valid values | Error |
+|-----------|---------|--------------|-------|
+| `page` | `0` | `>= 0` integer | `400` |
+| `size` | `10` | `>= 1` integer | `400` |
+| `status` | *(none)* | `OPEN`, `CLOSED` | `400` |
+| `ownerId` | *(none)* | any string | — |
+| `sortBy` | `createdAt` | `createdAt`, `title`, `updatedAt` | `400` |
+| `order` | `desc` | `asc`, `desc` | `400` |
+
 ```bash
+# Default (no params)
 curl http://localhost:5257/api/topics
+
+# With pagination
+curl "http://localhost:5257/api/topics?page=0&size=5"
+
+# With filtering
+curl "http://localhost:5257/api/topics?status=OPEN"
+curl "http://localhost:5257/api/topics?ownerId=user-uuid"
+
+# With sorting
+curl "http://localhost:5257/api/topics?sortBy=title&order=asc"
+
+# Combined
+curl "http://localhost:5257/api/topics?page=0&size=5&status=OPEN&sortBy=createdAt&order=desc"
 ```
 
 **Expected Response (200 OK):**
 ```json
-[
-  {
-    "id": "generated-uuid",
-    "title": "My First Topic",
-    "description": "A topic for new ideas",
-    "status": "OPEN",
-    "ownerId": "user-uuid",
-    "createdAt": "2026-03-30T00:00:00Z",
-    "updatedAt": "2026-03-30T00:00:00Z",
-    "winningIdea": null
-  }
-]
+{
+  "data": [
+    {
+      "id": "generated-uuid",
+      "title": "My First Topic",
+      "description": "A topic for new ideas",
+      "status": "OPEN",
+      "ownerId": "user-uuid",
+      "createdAt": "2026-03-30T00:00:00Z",
+      "updatedAt": "2026-03-30T00:00:00Z",
+      "winningIdea": null
+    }
+  ],
+  "currentPage": 0,
+  "pageSize": 5,
+  "totalItems": 1,
+  "totalPages": 1
+}
+```
+
+**Expected Response (400 Bad Request):** Invalid pagination, filter or sort parameters.
+```json
+{ "error": "sortBy must be one of: createdAt, title, updatedAt." }
 ```
 
 ### 6.3. GET /api/topics/{id} — Get Topic by ID (Public)
@@ -206,6 +243,58 @@ curl http://localhost:5257/api/ideas/topic/$TOPIC_ID
 ```
 
 **Expected Response (200 OK):** An array of ideas. If the topic does not exist (or has no ideas), the response is `[]`.
+
+### 6.6b. GET /api/ideas — Get All Ideas (Public)
+
+Supports pagination and sorting via query parameters.
+
+| Parameter | Default | Valid values | Error |
+|-----------|---------|--------------|-------|
+| `page` | `0` | `>= 0` integer | `400` |
+| `size` | `10` | `>= 1` integer | `400` |
+| `sortBy` | `updatedAt` | `updatedAt` | `400` |
+| `order` | `desc` | `asc`, `desc` | `400` |
+
+```bash
+# Default (no params)
+curl http://localhost:5257/api/ideas
+
+# With pagination
+curl "http://localhost:5257/api/ideas?page=0&size=5"
+
+# With sorting
+curl "http://localhost:5257/api/ideas?sortBy=updatedAt&order=asc"
+
+# Combined
+curl "http://localhost:5257/api/ideas?page=0&size=5&sortBy=updatedAt&order=desc"
+```
+
+**Expected Response (200 OK):**
+```json
+{
+  "data": [
+    {
+      "id": "generated-uuid",
+      "topicId": "topic-uuid",
+      "ownerId": "user-uuid",
+      "title": "My Idea",
+      "description": "Some details",
+      "createdAt": "2026-03-30T11:00:00Z",
+      "updatedAt": "2026-03-30T11:30:00Z",
+      "isWinning": false
+    }
+  ],
+  "currentPage": 0,
+  "pageSize": 5,
+  "totalItems": 1,
+  "totalPages": 1
+}
+```
+
+**Expected Response (400 Bad Request):** Invalid pagination or sort parameters.
+```json
+{ "error": "order must be 'asc' or 'desc'." }
+```
 
 ### 6.7. PUT /api/ideas/{id} — Update an Idea (Owner only)
 ```bash
@@ -296,6 +385,29 @@ VOTE_ID="generated-uuid"
 
 curl -X DELETE http://localhost:5257/api/votes/$VOTE_ID \
      -H "Authorization: Bearer $TOKEN"
+```
+
+## 6.10. Statistics (US 3.3) (Public)
+
+All statistics endpoints are **public** (no JWT required) and support pagination where applicable.
+
+### 6.10.1. GET /api/statistics/top-topics?limit=10&offset=0
+Returns topics ordered by total votes across all ideas in the topic (descending).
+```bash
+curl "http://localhost:5257/api/statistics/top-topics?limit=10&offset=0"
+```
+
+### 6.10.2. GET /api/statistics/most-voted-ideas?limit=10&offset=0
+Returns ideas ordered by vote count (descending), including the idea's topic details.
+```bash
+curl "http://localhost:5257/api/statistics/most-voted-ideas?limit=10&offset=0"
+```
+
+### 6.10.3. GET /api/statistics/topic/{topicId}/summary
+Returns aggregated statistics for a single topic.
+```bash
+TOPIC_ID="generated-uuid"
+curl "http://localhost:5257/api/statistics/topic/$TOPIC_ID/summary"
 ```
 
 ## 7. Running Tests

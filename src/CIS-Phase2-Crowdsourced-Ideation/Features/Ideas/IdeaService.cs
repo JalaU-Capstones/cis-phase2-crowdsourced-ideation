@@ -1,4 +1,3 @@
-using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +9,7 @@ namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 public interface IIdeaService
 {
     Task<IdeaResponse> CreateIdeaAsync(CreateIdeaRequest request, ClaimsPrincipal user);
-    Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(int currentPage, int pageSize, string? sortBy, string? order);
+    Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(int? page, int? size, string? sortBy, string? order);
     Task<IdeaResponse?> GetIdeaByIdAsync(Guid id);
     Task<IEnumerable<IdeaResponse>> GetIdeasByTopicIdAsync(string topicId);
     Task<IdeaResponse?> UpdateIdeaAsync(Guid id, UpdateIdeaRequest request, ClaimsPrincipal user);
@@ -19,6 +18,8 @@ public interface IIdeaService
 
 public class IdeaService(AppDbContext context) : IIdeaService
 {
+    private static readonly string[] ValidSortFields = ["updatedAt"];
+    private static readonly string[] ValidOrders = ["asc", "desc"];
     private async Task<Guid> ResolveUserIdAsync(ClaimsPrincipal user)
     {
         var raw = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -40,7 +41,7 @@ public class IdeaService(AppDbContext context) : IIdeaService
     public async Task<IdeaResponse> CreateIdeaAsync(CreateIdeaRequest request, ClaimsPrincipal user)
     {
         var userId = await ResolveUserIdAsync(user);
-
+        
         var topic = await context.Topics
             .AsNoTracking()
             .Where(t => t.Id == request.TopicId)
@@ -49,7 +50,7 @@ public class IdeaService(AppDbContext context) : IIdeaService
 
         if (topic is null)
         {
-            throw new ArgumentException("Topic not found");
+             throw new ArgumentException("Topic not found");
         }
 
         if (topic.Status == TopicStatus.CLOSED)
@@ -72,64 +73,57 @@ public class IdeaService(AppDbContext context) : IIdeaService
         context.Set<Idea>().Add(idea);
         await context.SaveChangesAsync();
 
-        // Topic is OPEN at this point (validated above)
-        return MapToResponse(idea, topicIsOpen: true);
+        return MapToResponse(idea);
     }
 
     public async Task<IdeaResponse?> GetIdeaByIdAsync(Guid id)
     {
         var idea = await context.Set<Idea>().FindAsync(id);
-        if (idea == null) return null;
-
-        // Load topic status for the conditional vote link (AC-5: vote only when OPEN)
-        var topicIsOpen = await context.Topics
-            .AsNoTracking()
-            .Where(t => t.Id == idea.TopicId)
-            .Select(t => t.Status == TopicStatus.OPEN)
-            .FirstOrDefaultAsync();
-
-        return MapToResponse(idea, topicIsOpen);
+        return idea == null ? null : MapToResponse(idea);
     }
 
-    public async Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(
-        int currentPage, int pageSize,
-        string? sortBy, string? order)
+    public async Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(int? page, int? size, string? sortBy, string? order)
     {
+        // 1. Validate pagination
+        var currentPage = page ?? 0;
+        var pageSize    = size ?? 10;
+
+        if (currentPage < 0)
+            throw new ArgumentException("page must be >= 0.");
+        if (pageSize <= 0)
+            throw new ArgumentException("size must be >= 1.");
+
+        // 2. Validate sorting
         var sortField = sortBy ?? "updatedAt";
         var sortOrder = order  ?? "desc";
 
+        if (!ValidSortFields.Contains(sortField))
+        throw new ArgumentException($"sortBy must be one of: {string.Join(", ", ValidSortFields)}.");
+        if (!ValidOrders.Contains(sortOrder))
+        throw new ArgumentException($"order must be 'asc' or 'desc'.");
+
+        // 3. Query base
         var query = context.Set<Idea>().AsNoTracking().AsQueryable();
 
-        // Aplicar sorting
+        // 4. Apply sorting
         query = (sortField, sortOrder) switch
         {
-            ("createdAt", "asc")  => query.OrderBy(i => i.CreatedAt),
-            ("createdAt", "desc") => query.OrderByDescending(i => i.CreatedAt),
             ("updatedAt", "asc")  => query.OrderBy(i => i.UpdatedAt),
             _                     => query.OrderByDescending(i => i.UpdatedAt),
         };
 
+        // 5. Count total BEFORE pagination
         var totalItems = await query.CountAsync();
         var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize);
 
+        // 6. Aplly pagination
         var ideas = await query
             .Skip(currentPage * pageSize)
             .Take(pageSize)
             .ToListAsync();
 
-        // Bulk-load open topic IDs to avoid N+1 queries for the conditional vote link (AC-5)
-        var topicIds = ideas.Select(i => i.TopicId).Distinct().ToList();
-        var openTopicIds = topicIds.Count > 0
-            ? (await context.Topics
-                .AsNoTracking()
-                .Where(t => topicIds.Contains(t.Id) && t.Status == TopicStatus.OPEN)
-                .Select(t => t.Id)
-                .ToListAsync())
-                .ToHashSet()
-            : new HashSet<string>();
-
         return new PagedResponse<IdeaResponse>(
-            Data:        ideas.Select(i => MapToResponse(i, openTopicIds.Contains(i.TopicId))),
+            Data:        ideas.Select(MapToResponse),
             CurrentPage: currentPage,
             PageSize:    pageSize,
             TotalItems:  totalItems,
@@ -143,15 +137,7 @@ public class IdeaService(AppDbContext context) : IIdeaService
             .AsNoTracking()
             .Where(i => i.TopicId == topicId)
             .ToListAsync();
-
-        // Load topic status once for the conditional vote link (AC-5)
-        var topicIsOpen = await context.Topics
-            .AsNoTracking()
-            .Where(t => t.Id == topicId)
-            .Select(t => t.Status == TopicStatus.OPEN)
-            .FirstOrDefaultAsync();
-
-        return ideas.Select(i => MapToResponse(i, topicIsOpen));
+        return ideas.Select(MapToResponse);
     }
 
     public async Task<IdeaResponse?> UpdateIdeaAsync(Guid id, UpdateIdeaRequest request, ClaimsPrincipal user)
@@ -189,9 +175,7 @@ public class IdeaService(AppDbContext context) : IIdeaService
         idea.UpdatedAt = now <= idea.UpdatedAt ? idea.UpdatedAt.AddTicks(1) : now;
 
         await context.SaveChangesAsync();
-
-        // Topic is OPEN at this point (validated above)
-        return MapToResponse(idea, topicIsOpen: true);
+        return MapToResponse(idea);
     }
 
     public async Task<bool> DeleteIdeaAsync(Guid id, ClaimsPrincipal user)
@@ -234,12 +218,7 @@ public class IdeaService(AppDbContext context) : IIdeaService
         return true;
     }
 
-    /// <summary>
-    /// Maps an Idea entity to an IdeaResponse DTO including HATEOAS links (US 3.2).
-    /// </summary>
-    /// <param name="idea">The idea entity.</param>
-    /// <param name="topicIsOpen">Whether the parent topic is OPEN. Controls the conditional vote link (AC-5).</param>
-    private static IdeaResponse MapToResponse(Idea idea, bool topicIsOpen = true) =>
+    private static IdeaResponse MapToResponse(Idea idea) =>
         new IdeaResponse(
             idea.Id,
             idea.TopicId,
@@ -249,8 +228,5 @@ public class IdeaService(AppDbContext context) : IIdeaService
             idea.CreatedAt,
             idea.UpdatedAt,
             idea.IsWinning
-        )
-        {
-            Links = HateoasBuilder.ForIdea(idea.Id, idea.TopicId, topicIsOpen)
-        };
+        );
 }

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using System.Security.Claims;
+using CIS.Phase2.CrowdsourcedIdeation.Features;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
@@ -18,11 +19,9 @@ public static class IdeaEndpoints
         group.MapGet("/", GetAllIdeas)
             .WithName("GetAllIdeas")
             .WithSummary("Get all ideas (public)")
-            .WithDescription("""
-                Public endpoint. Returns ideas with `title` and `description` as separate fields.
-                Internally, ideas are stored in the legacy-compatible `ideas.content` column as JSON.
-                """)
-            .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK);
+            .WithDescription("Public endpoint. Returns paginated ideas with sorting support.")
+            .Produces<PagedResponse<IdeaResponse>>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest);
 
         group.MapGet("/{id:guid}", GetIdea)
             .WithName("GetIdea")
@@ -150,8 +149,8 @@ public static class IdeaEndpoints
 
     private static async Task<IResult> GetAllIdeas(
         IIdeaService service,
-        [FromQuery] int page,
-        [FromQuery] int size,
+        [FromQuery] int? page,
+        [FromQuery] int? size,
         [FromQuery] string? sortBy,
         [FromQuery] string? order)
     {
@@ -165,7 +164,6 @@ public static class IdeaEndpoints
             return TypedResults.BadRequest<object>(new { error = ex.Message });
         }
     }
-
 
     private static async Task<IResult> GetIdea(Guid id, IIdeaService service)
     {
