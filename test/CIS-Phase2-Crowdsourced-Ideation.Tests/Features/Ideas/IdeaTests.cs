@@ -395,4 +395,178 @@ public class IdeaServiceTests
         // Act & Assert
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _service.DeleteIdeaAsync(idea.Id, user));
     }
+
+    // =====================================================================
+    // US 3.1 - Pagination and Sorting for GET /api/ideas
+    // =====================================================================
+
+    // --- PAGINATION ---
+
+    [Fact]
+    public async Task GetAllIdeas_ReturnsPaginatedResponse_WithDefaultValues()
+    {
+        var result = await _service.GetAllIdeasAsync(null, null, null, null);
+
+        Assert.NotNull(result);
+        Assert.Equal(0, result.CurrentPage);
+        Assert.Equal(10, result.PageSize);
+        Assert.Equal(0, result.TotalItems);
+        Assert.Equal(0, result.TotalPages);
+        Assert.Empty(result.Data);
+    }
+
+    [Fact]
+    public async Task GetAllIdeas_ReturnsPaginatedResponse_WithCustomPageAndSize()
+    {
+        var topicId = "topic-1";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Topic 1" });
+        for (int i = 0; i < 15; i++)
+            _context.Ideas.Add(new Idea
+            {
+                Id = Guid.NewGuid(), TopicId = topicId, OwnerId = Guid.NewGuid(),
+                Title = $"Idea {i}", Description = "Desc",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            });
+        await _context.SaveChangesAsync();
+
+        var result = await _service.GetAllIdeasAsync(page: 1, size: 5, null, null);
+
+        Assert.Equal(1, result.CurrentPage);
+        Assert.Equal(5, result.PageSize);
+        Assert.Equal(15, result.TotalItems);
+        Assert.Equal(3, result.TotalPages);
+        Assert.Equal(5, result.Data.Count());
+    }
+
+    [Fact]
+    public async Task GetAllIdeas_ReturnsBadRequest_WhenPageIsNegative()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _service.GetAllIdeasAsync(page: -1, size: 10, null, null));
+    }
+
+    [Fact]
+    public async Task GetAllIdeas_ReturnsBadRequest_WhenSizeIsZero()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _service.GetAllIdeasAsync(page: 0, size: 0, null, null));
+    }
+
+    [Fact]
+    public async Task GetAllIdeas_ReturnsBadRequest_WhenSizeIsNegative()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _service.GetAllIdeasAsync(page: 0, size: -5, null, null));
+    }
+
+    [Fact]
+    public async Task GetAllIdeas_ReturnsEmptyData_WhenPageExceedsTotalPages()
+    {
+        var topicId = "topic-1";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Topic 1" });
+        _context.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(), TopicId = topicId, OwnerId = Guid.NewGuid(),
+            Title = "Only Idea", Description = "Desc",
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _service.GetAllIdeasAsync(page: 99, size: 10, null, null);
+
+        Assert.Empty(result.Data);
+        Assert.Equal(1, result.TotalItems);
+    }
+
+    // --- SORTING ---
+
+    [Fact]
+    public async Task GetAllIdeas_SortsByUpdatedAtDesc_ByDefault()
+    {
+        var topicId = "topic-1";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Topic 1" });
+        var baseTime = DateTime.UtcNow;
+        _context.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(), TopicId = topicId, OwnerId = Guid.NewGuid(),
+            Title = "Older", Description = "Desc",
+            CreatedAt = baseTime, UpdatedAt = baseTime.AddHours(-2)
+        });
+        _context.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(), TopicId = topicId, OwnerId = Guid.NewGuid(),
+            Title = "Newer", Description = "Desc",
+            CreatedAt = baseTime, UpdatedAt = baseTime
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _service.GetAllIdeasAsync(null, null, null, null);
+
+        Assert.Equal("Newer", result.Data.First().Title);
+    }
+
+    [Fact]
+    public async Task GetAllIdeas_SortsByUpdatedAtAsc_WhenRequested()
+    {
+        var topicId = "topic-1";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Topic 1" });
+        var baseTime = DateTime.UtcNow;
+        _context.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(), TopicId = topicId, OwnerId = Guid.NewGuid(),
+            Title = "Older", Description = "Desc",
+            CreatedAt = baseTime, UpdatedAt = baseTime.AddHours(-2)
+        });
+        _context.Ideas.Add(new Idea
+        {
+            Id = Guid.NewGuid(), TopicId = topicId, OwnerId = Guid.NewGuid(),
+            Title = "Newer", Description = "Desc",
+            CreatedAt = baseTime, UpdatedAt = baseTime
+        });
+        await _context.SaveChangesAsync();
+
+        var result = await _service.GetAllIdeasAsync(null, null, sortBy: "updatedAt", order: "asc");
+
+        Assert.Equal("Older", result.Data.First().Title);
+    }
+
+    [Fact]
+    public async Task GetAllIdeas_ReturnsBadRequest_WhenSortByIsInvalid()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _service.GetAllIdeasAsync(null, null, sortBy: "invalid", null));
+    }
+
+    [Fact]
+    public async Task GetAllIdeas_ReturnsBadRequest_WhenOrderIsInvalid()
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            _service.GetAllIdeasAsync(null, null, null, order: "invalid"));
+    }
+
+    // --- COMBINED ---
+
+    [Fact]
+    public async Task GetAllIdeas_AppliesSortThenPagination_WhenAllParamsProvided()
+    {
+        var topicId = "topic-1";
+        _context.Topics.Add(new Topic { Id = topicId, Title = "Topic 1" });
+        var baseTime = DateTime.UtcNow;
+        for (int i = 0; i < 5; i++)
+            _context.Ideas.Add(new Idea
+            {
+                Id = Guid.NewGuid(), TopicId = topicId, OwnerId = Guid.NewGuid(),
+                Title = $"Idea {i}", Description = "Desc",
+                CreatedAt = baseTime, UpdatedAt = baseTime.AddMinutes(i)
+            });
+        await _context.SaveChangesAsync();
+
+        // Sort asc, page 0, size 2 → los 2 más viejos
+        var result = await _service.GetAllIdeasAsync(page: 0, size: 2, sortBy: "updatedAt", order: "asc");
+
+        Assert.Equal(5, result.TotalItems);
+        Assert.Equal(3, result.TotalPages); // ceil(5/2)
+        Assert.Equal(2, result.Data.Count());
+        Assert.Equal("Idea 0", result.Data.First().Title); // el más viejo primero
+    }
 }
