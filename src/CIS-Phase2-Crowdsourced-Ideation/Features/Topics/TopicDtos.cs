@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
+
 namespace CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 
 /// <summary>
@@ -55,4 +58,12 @@ public sealed record TopicResponse(
     string OwnerId,
     DateTime CreatedAt,
     DateTime UpdatedAt,
-    WinningIdeaResponse? WinningIdea);
+    WinningIdeaResponse? WinningIdea)
+{
+    /// <summary>
+    /// HATEOAS hypermedia links for client navigation.
+    /// Includes self, ideas, update, delete. Includes winner only when status is CLOSED.
+    /// </summary>
+    [JsonPropertyName("_links")]
+    public IReadOnlyList<LinkDto>? Links { get; init; }
+}
