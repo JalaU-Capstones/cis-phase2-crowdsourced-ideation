@@ -1,3 +1,4 @@
+using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using Microsoft.EntityFrameworkCore;
@@ -70,13 +71,23 @@ public class IdeaService(AppDbContext context) : IIdeaService
         context.Set<Idea>().Add(idea);
         await context.SaveChangesAsync();
 
-        return MapToResponse(idea);
+        // Topic is OPEN at this point (validated above)
+        return MapToResponse(idea, topicIsOpen: true);
     }
 
     public async Task<IdeaResponse?> GetIdeaByIdAsync(Guid id)
     {
         var idea = await context.Set<Idea>().FindAsync(id);
-        return idea == null ? null : MapToResponse(idea);
+        if (idea == null) return null;
+
+        // Load topic status for the conditional vote link (AC-5: vote only when OPEN)
+        var topicIsOpen = await context.Topics
+            .AsNoTracking()
+            .Where(t => t.Id == idea.TopicId)
+            .Select(t => t.Status == TopicStatus.OPEN)
+            .FirstOrDefaultAsync();
+
+        return MapToResponse(idea, topicIsOpen);
     }
 
     public async Task<IEnumerable<IdeaResponse>> GetAllIdeasAsync()
@@ -85,7 +96,19 @@ public class IdeaService(AppDbContext context) : IIdeaService
             .AsNoTracking()
             .OrderByDescending(i => i.UpdatedAt)
             .ToListAsync();
-        return ideas.Select(MapToResponse);
+
+        // Bulk-load open topic IDs to avoid N+1 queries for the conditional vote link (AC-5)
+        var topicIds = ideas.Select(i => i.TopicId).Distinct().ToList();
+        var openTopicIds = topicIds.Count > 0
+            ? (await context.Topics
+                .AsNoTracking()
+                .Where(t => topicIds.Contains(t.Id) && t.Status == TopicStatus.OPEN)
+                .Select(t => t.Id)
+                .ToListAsync())
+                .ToHashSet()
+            : new HashSet<string>();
+
+        return ideas.Select(i => MapToResponse(i, openTopicIds.Contains(i.TopicId)));
     }
 
     public async Task<IEnumerable<IdeaResponse>> GetIdeasByTopicIdAsync(string topicId)
@@ -94,7 +117,15 @@ public class IdeaService(AppDbContext context) : IIdeaService
             .AsNoTracking()
             .Where(i => i.TopicId == topicId)
             .ToListAsync();
-        return ideas.Select(MapToResponse);
+
+        // Load topic status once for the conditional vote link (AC-5)
+        var topicIsOpen = await context.Topics
+            .AsNoTracking()
+            .Where(t => t.Id == topicId)
+            .Select(t => t.Status == TopicStatus.OPEN)
+            .FirstOrDefaultAsync();
+
+        return ideas.Select(i => MapToResponse(i, topicIsOpen));
     }
 
     public async Task<IdeaResponse?> UpdateIdeaAsync(Guid id, UpdateIdeaRequest request, ClaimsPrincipal user)
@@ -132,7 +163,9 @@ public class IdeaService(AppDbContext context) : IIdeaService
         idea.UpdatedAt = now <= idea.UpdatedAt ? idea.UpdatedAt.AddTicks(1) : now;
 
         await context.SaveChangesAsync();
-        return MapToResponse(idea);
+
+        // Topic is OPEN at this point (validated above)
+        return MapToResponse(idea, topicIsOpen: true);
     }
 
     public async Task<bool> DeleteIdeaAsync(Guid id, ClaimsPrincipal user)
@@ -175,7 +208,12 @@ public class IdeaService(AppDbContext context) : IIdeaService
         return true;
     }
 
-    private static IdeaResponse MapToResponse(Idea idea) =>
+    /// <summary>
+    /// Maps an Idea entity to an IdeaResponse DTO including HATEOAS links
+    /// </summary>
+    /// <param name="idea">The idea entity</param>
+    /// <param name="topicIsOpen">Whether the parent topic is OPEN. Controls the conditional vote link (AC-5)</param>
+    private static IdeaResponse MapToResponse(Idea idea, bool topicIsOpen = true) =>
         new IdeaResponse(
             idea.Id,
             idea.TopicId,
@@ -185,5 +223,8 @@ public class IdeaService(AppDbContext context) : IIdeaService
             idea.CreatedAt,
             idea.UpdatedAt,
             idea.IsWinning
-        );
+        )
+        {
+            Links = HateoasBuilder.ForIdea(idea.Id, idea.TopicId, topicIsOpen)
+        };
 }
