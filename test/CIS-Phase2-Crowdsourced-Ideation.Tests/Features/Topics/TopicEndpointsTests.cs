@@ -3,10 +3,10 @@ using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 using FluentAssertions;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using CIS.Phase2.CrowdsourcedIdeation.Features;
 using Xunit;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Topics;
@@ -35,16 +35,16 @@ public class TopicEndpointsTests
         return user;
     }
 
-    // GET /topics
+   // GET /topics
     [Fact]
     public async Task GetAllTopics_ReturnsOk_WithEmptyList()
     {
         var db = CreateInMemoryDb();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
-
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().BeEmpty();
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
+        
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().BeEmpty(); 
     }
 
     [Fact]
@@ -63,11 +63,11 @@ public class TopicEndpointsTests
         });
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
 
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().HaveCount(1);
-        ok.Value!.First().Title.Should().Be("Topic A");
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().HaveCount(1);
+        ok.Value!.Data.First().Title.Should().Be("Topic A");
     }
 
     [Fact]
@@ -101,12 +101,12 @@ public class TopicEndpointsTests
 
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
 
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().HaveCount(1);
-        ok.Value!.First().WinningIdea.Should().NotBeNull();
-        ok.Value!.First().WinningIdea!.Title.Should().Be("Winner");
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().HaveCount(1);
+        ok.Value!.Data.First().WinningIdea.Should().NotBeNull();
+        ok.Value!.Data.First().WinningIdea!.Title.Should().Be("Winner");
     }
 
     [Fact]
@@ -141,11 +141,11 @@ public class TopicEndpointsTests
 
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
 
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().HaveCount(1);
-        ok.Value!.First().WinningIdea.Should().BeNull();
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().HaveCount(1);
+        ok.Value!.Data.First().WinningIdea.Should().BeNull();
     }
 
     [Fact]
@@ -178,11 +178,11 @@ public class TopicEndpointsTests
 
         await db.SaveChangesAsync();
 
-        var result = await TopicEndpoints.HandleGetAllTopics(db);
+        var result = await TopicEndpoints.HandleGetAllTopics(db, null, null, null, null, null, null);
 
-        var ok = result.Should().BeOfType<Ok<IEnumerable<TopicResponse>>>().Subject;
-        ok.Value.Should().HaveCount(1);
-        ok.Value!.First().WinningIdea.Should().BeNull();
+        var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
+        ok.Value!.Data.Should().HaveCount(1);
+        ok.Value!.Data.First().WinningIdea.Should().BeNull();
     }
 
     // GET /topics/{id}
