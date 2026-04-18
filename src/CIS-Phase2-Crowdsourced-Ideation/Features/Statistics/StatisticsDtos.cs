@@ -1,3 +1,5 @@
+using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
+
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Statistics;
 
 public sealed record TopTopicDto(
@@ -6,7 +8,9 @@ public sealed record TopTopicDto(
     string Status,
     int IdeasCount,
     int VotesCount
-);
+) {
+    public IReadOnlyList<LinkDto>? Links { get; init; }
+}
 
 public sealed record MostVotedIdeaDto(
     Guid IdeaId,
@@ -14,7 +18,9 @@ public sealed record MostVotedIdeaDto(
     string TopicId,
     string TopicTitle,
     int VotesCount
-);
+) {
+    public IReadOnlyList<LinkDto>? Links { get; init; }
+}
 
 public sealed record IdeaBriefDto(
     Guid IdeaId,
@@ -30,7 +36,8 @@ public sealed record TopicSummaryDto(
     int VotesCount,
     IdeaBriefDto? WinningIdea,
     IdeaBriefDto? MostVotedIdea
-);
+) {
+    public IReadOnlyList<LinkDto>? Links { get; init; }
+}
 
 public sealed record ErrorResponse(string Message);
-

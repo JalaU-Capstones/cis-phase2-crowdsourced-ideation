@@ -17,17 +17,19 @@ public class TopicRepository(AppDbContext context) : ITopicRepository
 
     public async Task AddAsync(Topic topic)
     {
-        context.Topics.Add(topic);
+        await context.Topics.AddAsync(topic);
     }
 
     public async Task UpdateAsync(Topic topic)
     {
         context.Topics.Update(topic);
+        await Task.CompletedTask;
     }
 
     public async Task DeleteAsync(Topic topic)
     {
         context.Entry(topic).State = EntityState.Deleted;
+        await Task.CompletedTask;
     }
 
     public async Task<bool> ExistsAsync(string id)

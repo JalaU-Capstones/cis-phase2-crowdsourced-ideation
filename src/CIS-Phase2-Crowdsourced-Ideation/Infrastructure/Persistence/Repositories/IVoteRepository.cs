@@ -8,6 +8,7 @@ public interface IVoteRepository
     Task<IEnumerable<Vote>> GetAllAsync();
     Task<IEnumerable<Vote>> GetByIdeaIdAsync(Guid ideaId);
     Task AddAsync(Vote vote);
+    Task UpdateAsync(Vote vote);
     Task DeleteAsync(Vote vote);
     Task<bool> ExistsAsync(Guid id);
     Task<int> CountByIdeaIdAsync(Guid ideaId);

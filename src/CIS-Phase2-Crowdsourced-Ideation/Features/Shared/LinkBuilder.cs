@@ -66,4 +66,31 @@ public static class HateoasBuilder
             new($"api/{version}/votes/{voteId}",      "DELETE", "remove"),
         }.AsReadOnly();
     }
+
+    public static IReadOnlyList<LinkDto> ForTopTopic(string topicId, string version = "v1")
+    {
+        return new List<LinkDto>
+        {
+            new($"api/{version}/topics/{topicId}", "GET", "topic"),
+            new($"api/{version}/statistics/topic/{topicId}/summary", "GET", "summary")
+        }.AsReadOnly();
+    }
+
+    public static IReadOnlyList<LinkDto> ForMostVotedIdea(Guid ideaId, string topicId, string version = "v1")
+    {
+        return new List<LinkDto>
+        {
+            new($"api/{version}/ideas/{ideaId}", "GET", "idea"),
+            new($"api/{version}/topics/{topicId}", "GET", "topic")
+        }.AsReadOnly();
+    }
+
+    public static IReadOnlyList<LinkDto> ForTopicSummary(string topicId, string version = "v1")
+    {
+        return new List<LinkDto>
+        {
+            new($"api/{version}/statistics/topic/{topicId}/summary", "GET", "self"),
+            new($"api/{version}/topics/{topicId}", "GET", "topic")
+        }.AsReadOnly();
+    }
 }

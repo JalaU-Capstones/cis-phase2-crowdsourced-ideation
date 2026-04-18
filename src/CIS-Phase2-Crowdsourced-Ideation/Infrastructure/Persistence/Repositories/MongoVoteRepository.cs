@@ -28,6 +28,11 @@ public class MongoVoteRepository(MongoDbContext context) : IVoteRepository
         await _collection.InsertOneAsync(vote);
     }
 
+    public async Task UpdateAsync(Vote vote)
+    {
+        await _collection.ReplaceOneAsync(v => v.Id == vote.Id, vote);
+    }
+
     public async Task DeleteAsync(Vote vote)
     {
         await _collection.DeleteOneAsync(v => v.Id == vote.Id);

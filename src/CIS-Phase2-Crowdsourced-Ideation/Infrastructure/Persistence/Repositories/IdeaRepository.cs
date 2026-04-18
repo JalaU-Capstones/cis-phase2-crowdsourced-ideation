@@ -22,19 +22,23 @@ public class IdeaRepository(AppDbContext context) : IIdeaRepository
 
     public async Task AddAsync(Idea idea)
     {
-        context.Ideas.Add(idea);
+        await context.Ideas.AddAsync(idea);
     }
 
     public async Task UpdateAsync(Idea idea)
     {
         context.Ideas.Update(idea);
+        await Task.CompletedTask;
     }
 
     public async Task DeleteAsync(Idea idea)
     {
         var existing = await context.Ideas.FindAsync(idea.Id);
         if (existing != null)
+        {
             context.Ideas.Remove(existing);
+        }
+        await Task.CompletedTask;
     }
 
     public async Task<bool> ExistsAsync(Guid id)

@@ -22,7 +22,13 @@ public class VoteRepository(AppDbContext context) : IVoteRepository
 
     public async Task AddAsync(Vote vote)
     {
-        context.Votes.Add(vote);
+        await context.Votes.AddAsync(vote);
+    }
+
+    public async Task UpdateAsync(Vote vote)
+    {
+        context.Entry(vote).State = EntityState.Modified;
+        await Task.CompletedTask;
     }
 
     public async Task DeleteAsync(Vote vote)

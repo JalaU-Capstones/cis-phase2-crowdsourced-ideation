@@ -2,6 +2,7 @@ using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
+using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Statistics;
 
@@ -29,7 +30,10 @@ public sealed class StatisticsService(IRepositoryAdapter adapter, string version
             {
                 totalVotes += await adapter.Votes.CountByIdeaIdAsync(idea.Id);
             }
-            results.Add(new TopTopicDto(t.Id, t.Title, t.Status.ToString(), ideas.Count(), totalVotes));
+            results.Add(new TopTopicDto(t.Id, t.Title, t.Status.ToString(), ideas.Count(), totalVotes)
+            {
+                Links = HateoasBuilder.ForTopTopic(t.Id, version)
+            });
         }
 
         return results
@@ -52,7 +56,10 @@ public sealed class StatisticsService(IRepositoryAdapter adapter, string version
         {
             var topic = await adapter.Topics.GetByIdAsync(i.TopicId);
             var voteCount = await adapter.Votes.CountByIdeaIdAsync(i.Id);
-            results.Add(new MostVotedIdeaDto(i.Id, i.Title, i.TopicId, topic?.Title ?? "N/A", voteCount));
+            results.Add(new MostVotedIdeaDto(i.Id, i.Title, i.TopicId, topic?.Title ?? "N/A", voteCount)
+            {
+                Links = HateoasBuilder.ForMostVotedIdea(i.Id, i.TopicId, version)
+            });
         }
 
         return results
@@ -81,7 +88,10 @@ public sealed class StatisticsService(IRepositoryAdapter adapter, string version
                 0,
                 0,
                 WinningIdea: null,
-                MostVotedIdea: null);
+                MostVotedIdea: null)
+            {
+                Links = HateoasBuilder.ForTopicSummary(topicId, version)
+            };
         }
 
         int totalVotes = 0;
@@ -113,6 +123,9 @@ public sealed class StatisticsService(IRepositoryAdapter adapter, string version
             ideasCount,
             totalVotes,
             winningDto,
-            mostVotedDto);
+            mostVotedDto)
+        {
+            Links = HateoasBuilder.ForTopicSummary(topicId, version)
+        };
     }
 }
