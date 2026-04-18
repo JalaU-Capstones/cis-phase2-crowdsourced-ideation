@@ -24,6 +24,7 @@ public static class StatisticsEndpoints
                 : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
             
             context.HttpContext.Items["RepositoryAdapter"] = adapter;
+            context.HttpContext.Items["ApiVersion"] = version;
             return await next(context);
         });
 
@@ -49,49 +50,47 @@ public static class StatisticsEndpoints
         return endpoints;
     }
 
-    private static IStatisticsService GetService(HttpContext http, string version)
+    private static IStatisticsService GetService(HttpContext http)
     {
         var adapter = (IRepositoryAdapter)http.Items["RepositoryAdapter"]!;
+        var version = (string)http.Items["ApiVersion"]!;
         return new StatisticsService(adapter, version);
     }
 
     public static async Task<IResult> HandleTopTopics(
         HttpContext http,
-        string version,
         int? limit,
         int? offset)
     {
         if (!TryValidatePaging(limit, offset, out var l, out var o, out var error))
             return TypedResults.BadRequest(new ErrorResponse(error));
 
-        var service = GetService(http, version);
+        var service = GetService(http);
         var data = await service.GetTopTopicsAsync(l, o);
         return TypedResults.Ok(data);
     }
 
     public static async Task<IResult> HandleMostVotedIdeas(
         HttpContext http,
-        string version,
         int? limit,
         int? offset)
     {
         if (!TryValidatePaging(limit, offset, out var l, out var o, out var error))
             return TypedResults.BadRequest(new ErrorResponse(error));
 
-        var service = GetService(http, version);
+        var service = GetService(http);
         var data = await service.GetMostVotedIdeasAsync(l, o);
         return TypedResults.Ok(data);
     }
 
     public static async Task<IResult> HandleTopicSummary(
         string topicId,
-        HttpContext http,
-        string version)
+        HttpContext http)
     {
         if (string.IsNullOrWhiteSpace(topicId))
             return TypedResults.BadRequest(new ErrorResponse("topicId is required."));
 
-        var service = GetService(http, version);
+        var service = GetService(http);
         var summary = await service.GetTopicSummaryAsync(topicId);
         return summary is null ? TypedResults.NotFound() : TypedResults.Ok(summary);
     }

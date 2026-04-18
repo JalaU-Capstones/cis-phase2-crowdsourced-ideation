@@ -21,6 +21,7 @@ public static class VoteEndpoints
                 : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
             
             context.HttpContext.Items["RepositoryAdapter"] = adapter;
+            context.HttpContext.Items["ApiVersion"] = version;
             return await next(context);
         });
 
@@ -74,37 +75,39 @@ public static class VoteEndpoints
         return endpoints;
     }
 
-    private static IVoteService GetService(HttpContext http, string version)
+    private static IVoteService GetService(HttpContext http)
     {
         var adapter = (IRepositoryAdapter)http.Items["RepositoryAdapter"]!;
+        var version = (string)http.Items["ApiVersion"]!;
         return new VoteService(adapter, version);
     }
 
-    internal static async Task<IResult> HandleGetAllVotes(HttpContext http, string version)
+    internal static async Task<IResult> HandleGetAllVotes(HttpContext http)
     {
-        var service = GetService(http, version);
+        var service = GetService(http);
         return TypedResults.Ok(await service.GetAllAsync());
     }
 
-    internal static async Task<IResult> HandleGetVotesByIdea(Guid ideaId, HttpContext http, string version)
+    internal static async Task<IResult> HandleGetVotesByIdea(Guid ideaId, HttpContext http)
     {
-        var service = GetService(http, version);
+        var service = GetService(http);
         return TypedResults.Ok(await service.GetByIdeaIdAsync(ideaId));
     }
 
-    internal static async Task<Results<Ok<VoteResponse>, NotFound>> HandleGetVoteById(Guid voteId, HttpContext http, string version)
+    internal static async Task<Results<Ok<VoteResponse>, NotFound>> HandleGetVoteById(Guid voteId, HttpContext http)
     {
-        var service = GetService(http, version);
+        var service = GetService(http);
         var vote = await service.GetByIdAsync(voteId);
         return vote is null ? TypedResults.NotFound() : TypedResults.Ok(vote);
     }
 
-    internal static async Task<IResult> HandleCastVote(CastVoteRequest request, HttpContext http, string version, ClaimsPrincipal user)
+    internal static async Task<IResult> HandleCastVote(CastVoteRequest request, HttpContext http, ClaimsPrincipal user)
     {
         try
         {
-            var service = GetService(http, version);
+            var service = GetService(http);
             var created = await service.CastVoteAsync(request, user);
+            var version = (string)http.Items["ApiVersion"]!;
             return TypedResults.Created($"/api/{version}/votes/{created.Id}", created);
         }
         catch (VoteUnauthorizedException)
@@ -125,11 +128,11 @@ public static class VoteEndpoints
         }
     }
 
-    internal static async Task<IResult> HandleUpdateVote(Guid voteId, UpdateVoteRequest request, HttpContext http, string version, ClaimsPrincipal user)
+    internal static async Task<IResult> HandleUpdateVote(Guid voteId, UpdateVoteRequest request, HttpContext http, ClaimsPrincipal user)
     {
         try
         {
-            var service = GetService(http, version);
+            var service = GetService(http);
             var updated = await service.UpdateVoteAsync(voteId, request, user);
             return updated is null ? TypedResults.NotFound() : TypedResults.Ok(updated);
         }
@@ -151,11 +154,11 @@ public static class VoteEndpoints
         }
     }
 
-    internal static async Task<IResult> HandleDeleteVote(Guid voteId, HttpContext http, string version, ClaimsPrincipal user)
+    internal static async Task<IResult> HandleDeleteVote(Guid voteId, HttpContext http, ClaimsPrincipal user)
     {
         try
         {
-            var service = GetService(http, version);
+            var service = GetService(http);
             var deleted = await service.DeleteVoteAsync(voteId, user);
             return deleted
                 ? TypedResults.Ok(new { message = "Vote deleted.", voteId })

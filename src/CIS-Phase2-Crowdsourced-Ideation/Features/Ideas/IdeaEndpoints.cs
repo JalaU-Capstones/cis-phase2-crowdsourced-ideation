@@ -25,6 +25,7 @@ public static class IdeaEndpoints
                 : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
             
             context.HttpContext.Items["RepositoryAdapter"] = adapter;
+            context.HttpContext.Items["ApiVersion"] = version;
             return await next(context);
         });
 
@@ -75,14 +76,15 @@ public static class IdeaEndpoints
             .Produces(StatusCodes.Status404NotFound);
     }
 
-    private static IIdeaService GetService(HttpContext http, string version)
+    private static IIdeaService GetService(HttpContext http)
     {
         var adapter = (IRepositoryAdapter)http.Items["RepositoryAdapter"]!;
+        var version = (string)http.Items["ApiVersion"]!;
         return new IdeaService(adapter, version);
     }
 
     private static async Task<IResult> CreateIdea(
-        CreateIdeaRequest request, HttpContext http, string version, ClaimsPrincipal user)
+        CreateIdeaRequest request, HttpContext http, ClaimsPrincipal user)
     {
         if (string.IsNullOrWhiteSpace(request.TopicId) || string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Description))
         {
@@ -91,8 +93,9 @@ public static class IdeaEndpoints
 
         try 
         {
-            var service = GetService(http, version);
+            var service = GetService(http);
             var result = await service.CreateIdeaAsync(request, user);
+            var version = (string)http.Items["ApiVersion"]!;
             return TypedResults.Created($"/api/{version}/ideas/{result.Id}", result);
         }
         catch (ArgumentException ex)
@@ -107,7 +110,6 @@ public static class IdeaEndpoints
 
     private static async Task<IResult> GetAllIdeas(
         HttpContext http,
-        string version,
         [FromQuery] int? page,
         [FromQuery] int? size,
         [FromQuery] string? sortBy,
@@ -115,7 +117,7 @@ public static class IdeaEndpoints
     {
         try
         {
-            var service = GetService(http, version);
+            var service = GetService(http);
             var result = await service.GetAllIdeasAsync(page, size, sortBy, order);
             return TypedResults.Ok(result);
         }
@@ -125,22 +127,22 @@ public static class IdeaEndpoints
         }
     }
 
-    private static async Task<IResult> GetIdea(Guid id, HttpContext http, string version)
+    private static async Task<IResult> GetIdea(Guid id, HttpContext http)
     {
-        var service = GetService(http, version);
+        var service = GetService(http);
         var result = await service.GetIdeaByIdAsync(id);
         return result == null ? TypedResults.NotFound() : TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> GetIdeasByTopic(string topicId, HttpContext http, string version)
+    private static async Task<IResult> GetIdeasByTopic(string topicId, HttpContext http)
     {
-        var service = GetService(http, version);
+        var service = GetService(http);
         var result = await service.GetIdeasByTopicIdAsync(topicId);
         return TypedResults.Ok(result);
     }
 
     private static async Task<IResult> UpdateIdea(
-        Guid id, UpdateIdeaRequest request, HttpContext http, string version, ClaimsPrincipal user)
+        Guid id, UpdateIdeaRequest request, HttpContext http, ClaimsPrincipal user)
     {
         if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Description))
         {
@@ -149,7 +151,7 @@ public static class IdeaEndpoints
 
         try
         {
-            var service = GetService(http, version);
+            var service = GetService(http);
             var result = await service.UpdateIdeaAsync(id, request, user);
             return result == null ? TypedResults.NotFound() : TypedResults.Ok(result);
         }
@@ -159,11 +161,11 @@ public static class IdeaEndpoints
         }
     }
 
-    private static async Task<IResult> DeleteIdea(Guid id, HttpContext http, string version, ClaimsPrincipal user)
+    private static async Task<IResult> DeleteIdea(Guid id, HttpContext http, ClaimsPrincipal user)
     {
         try
         {
-            var service = GetService(http, version);
+            var service = GetService(http);
             var result = await service.DeleteIdeaAsync(id, user);
             return result
                 ? TypedResults.Ok(new { message = "Idea deleted. All votes related to this idea were deleted as well.", ideaId = id })
