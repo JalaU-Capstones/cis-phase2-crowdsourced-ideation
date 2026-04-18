@@ -20,7 +20,7 @@ public static class TopicEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapTopicEndpoints(this IEndpointRouteBuilder endpoints, string version = "v1")
     {
-        var group = endpoints.MapGroup($"/api/{version}/topics")
+        var group = endpoints.MapGroup($"/{version}/topics")
             .WithTags("Topics");
 
         // Use version-specific adapter
@@ -86,7 +86,7 @@ public static class TopicEndpoints
 
     public static async Task<IResult> HandleGetAllTopics(
         HttpContext http,
-        [FromRoute] string version,
+        string version,
         [FromQuery] int? page, [FromQuery] int? size,
         [FromQuery] string? status, [FromQuery] string? ownerId,
         [FromQuery] string? sortBy, [FromQuery] string? order)
@@ -104,7 +104,7 @@ public static class TopicEndpoints
     }
 
     public static async Task<Results<Ok<TopicResponse>, NotFound>> HandleGetTopicById(
-        string id, HttpContext http, [FromRoute] string version)
+        string id, HttpContext http, string version)
     {
         var service = GetService(http, version);
         var topic = await service.GetTopicByIdAsync(id);
@@ -118,7 +118,7 @@ public static class TopicEndpoints
         CreateTopicRequest request,
         ClaimsPrincipal user,
         HttpContext http,
-        [FromRoute] string version)
+        string version)
     {
         try
         {
@@ -141,7 +141,7 @@ public static class TopicEndpoints
         UpdateTopicRequest request,
         ClaimsPrincipal user,
         HttpContext http,
-        [FromRoute] string version)
+        string version)
     {
         try
         {
@@ -170,7 +170,7 @@ public static class TopicEndpoints
         string id,
         ClaimsPrincipal user,
         HttpContext http,
-        [FromRoute] string version)
+        string version)
     {
         try
         {

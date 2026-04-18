@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Diagnostics;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddFeatures(); // Add this line
+builder.Services.AddFeatures();
 
 var app = builder.Build();
 
@@ -23,7 +23,11 @@ app.UseExceptionHandler(errorApp =>
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "V1 (MySQL)");
+        c.SwaggerEndpoint("/swagger/v2/swagger.json", "V2 (MongoDB)");
+    });
 }
 
 app.UseAuthentication();

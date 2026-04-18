@@ -28,7 +28,7 @@ servers:
 
 tags:
   - name: Topics
-    description: Topic management (Dual Persistence: MySQL in V1, MongoDB in V2)
+    description: "Topic management (Dual Persistence: MySQL in V1, MongoDB in V2)"
   - name: Ideas
     description: Idea management within topics
   - name: Votes
@@ -630,5 +630,3 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/IdeaResponse' }
-
-  # (Other paths omitted for brevity but they should follow the same pattern)

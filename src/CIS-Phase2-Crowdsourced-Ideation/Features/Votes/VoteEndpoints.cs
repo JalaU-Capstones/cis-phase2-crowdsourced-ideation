@@ -10,7 +10,7 @@ public static class VoteEndpoints
 {
     public static IEndpointRouteBuilder MapVoteEndpoints(this IEndpointRouteBuilder endpoints, string version = "v1")
     {
-        var group = endpoints.MapGroup($"/api/{version}/votes")
+        var group = endpoints.MapGroup($"/{version}/votes")
             .WithTags("Votes");
 
         // Use version-specific adapter
@@ -80,26 +80,26 @@ public static class VoteEndpoints
         return new VoteService(adapter, version);
     }
 
-    internal static async Task<IResult> HandleGetAllVotes(HttpContext http, [FromRoute] string version)
+    internal static async Task<IResult> HandleGetAllVotes(HttpContext http, string version)
     {
         var service = GetService(http, version);
         return TypedResults.Ok(await service.GetAllAsync());
     }
 
-    internal static async Task<IResult> HandleGetVotesByIdea(Guid ideaId, HttpContext http, [FromRoute] string version)
+    internal static async Task<IResult> HandleGetVotesByIdea(Guid ideaId, HttpContext http, string version)
     {
         var service = GetService(http, version);
         return TypedResults.Ok(await service.GetByIdeaIdAsync(ideaId));
     }
 
-    internal static async Task<Results<Ok<VoteResponse>, NotFound>> HandleGetVoteById(Guid voteId, HttpContext http, [FromRoute] string version)
+    internal static async Task<Results<Ok<VoteResponse>, NotFound>> HandleGetVoteById(Guid voteId, HttpContext http, string version)
     {
         var service = GetService(http, version);
         var vote = await service.GetByIdAsync(voteId);
         return vote is null ? TypedResults.NotFound() : TypedResults.Ok(vote);
     }
 
-    internal static async Task<IResult> HandleCastVote(CastVoteRequest request, HttpContext http, [FromRoute] string version, ClaimsPrincipal user)
+    internal static async Task<IResult> HandleCastVote(CastVoteRequest request, HttpContext http, string version, ClaimsPrincipal user)
     {
         try
         {
@@ -125,7 +125,7 @@ public static class VoteEndpoints
         }
     }
 
-    internal static async Task<IResult> HandleUpdateVote(Guid voteId, UpdateVoteRequest request, HttpContext http, [FromRoute] string version, ClaimsPrincipal user)
+    internal static async Task<IResult> HandleUpdateVote(Guid voteId, UpdateVoteRequest request, HttpContext http, string version, ClaimsPrincipal user)
     {
         try
         {
@@ -151,7 +151,7 @@ public static class VoteEndpoints
         }
     }
 
-    internal static async Task<IResult> HandleDeleteVote(Guid voteId, HttpContext http, [FromRoute] string version, ClaimsPrincipal user)
+    internal static async Task<IResult> HandleDeleteVote(Guid voteId, HttpContext http, string version, ClaimsPrincipal user)
     {
         try
         {

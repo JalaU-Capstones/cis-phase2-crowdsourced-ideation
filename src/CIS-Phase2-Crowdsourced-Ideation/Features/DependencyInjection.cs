@@ -20,17 +20,23 @@ public static class DependencyInjection
 
     public static WebApplication MapFeatures(this WebApplication app)
     {
+        // Define common regex for versioning
+        const string v1 = "v1";
+        const string v2 = "v2";
+
         // V1 Endpoints
-        app.MapTopicEndpoints("v1");
-        app.MapIdeaEndpoints("v1"); 
-        app.MapVoteEndpoints("v1");
-        app.MapStatisticsEndpoints("v1");
+        var v1Group = app.MapGroup("/api").WithTags("V1");
+        v1Group.MapTopicEndpoints(v1);
+        v1Group.MapIdeaEndpoints(v1); 
+        v1Group.MapVoteEndpoints(v1);
+        v1Group.MapStatisticsEndpoints(v1);
 
         // V2 Endpoints
-        app.MapTopicEndpoints("v2");
-        app.MapIdeaEndpoints("v2");
-        app.MapVoteEndpoints("v2");
-        app.MapStatisticsEndpoints("v2");
+        var v2Group = app.MapGroup("/api").WithTags("V2");
+        v2Group.MapTopicEndpoints(v2);
+        v2Group.MapIdeaEndpoints(v2);
+        v2Group.MapVoteEndpoints(v2);
+        v2Group.MapStatisticsEndpoints(v2);
 
         return app;
     }

@@ -14,7 +14,7 @@ public static class IdeaEndpoints
 {
     public static void MapIdeaEndpoints(this IEndpointRouteBuilder app, string version = "v1")
     {
-        var group = app.MapGroup($"/api/{version}/ideas")
+        var group = app.MapGroup($"/{version}/ideas")
             .WithTags("Ideas");
 
         // Use version-specific adapter
@@ -82,7 +82,7 @@ public static class IdeaEndpoints
     }
 
     private static async Task<IResult> CreateIdea(
-        CreateIdeaRequest request, HttpContext http, [FromRoute] string version, ClaimsPrincipal user)
+        CreateIdeaRequest request, HttpContext http, string version, ClaimsPrincipal user)
     {
         if (string.IsNullOrWhiteSpace(request.TopicId) || string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Description))
         {
@@ -107,7 +107,7 @@ public static class IdeaEndpoints
 
     private static async Task<IResult> GetAllIdeas(
         HttpContext http,
-        [FromRoute] string version,
+        string version,
         [FromQuery] int? page,
         [FromQuery] int? size,
         [FromQuery] string? sortBy,
@@ -125,14 +125,14 @@ public static class IdeaEndpoints
         }
     }
 
-    private static async Task<IResult> GetIdea(Guid id, HttpContext http, [FromRoute] string version)
+    private static async Task<IResult> GetIdea(Guid id, HttpContext http, string version)
     {
         var service = GetService(http, version);
         var result = await service.GetIdeaByIdAsync(id);
         return result == null ? TypedResults.NotFound() : TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> GetIdeasByTopic(string topicId, HttpContext http, [FromRoute] string version)
+    private static async Task<IResult> GetIdeasByTopic(string topicId, HttpContext http, string version)
     {
         var service = GetService(http, version);
         var result = await service.GetIdeasByTopicIdAsync(topicId);
@@ -140,7 +140,7 @@ public static class IdeaEndpoints
     }
 
     private static async Task<IResult> UpdateIdea(
-        Guid id, UpdateIdeaRequest request, HttpContext http, [FromRoute] string version, ClaimsPrincipal user)
+        Guid id, UpdateIdeaRequest request, HttpContext http, string version, ClaimsPrincipal user)
     {
         if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Description))
         {
@@ -159,7 +159,7 @@ public static class IdeaEndpoints
         }
     }
 
-    private static async Task<IResult> DeleteIdea(Guid id, HttpContext http, [FromRoute] string version, ClaimsPrincipal user)
+    private static async Task<IResult> DeleteIdea(Guid id, HttpContext http, string version, ClaimsPrincipal user)
     {
         try
         {

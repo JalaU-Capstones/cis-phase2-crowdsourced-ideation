@@ -116,8 +116,14 @@ public static class DependencyInjection
         {
             c.SwaggerDoc("v1", new OpenApiInfo
             {
-                Title   = "CIS Phase 2 - Crowdsourced Ideation API",
+                Title   = "CIS Phase 2 - Crowdsourced Ideation API (V1)",
                 Version = "v1"
+            });
+            
+            c.SwaggerDoc("v2", new OpenApiInfo
+            {
+                Title   = "CIS Phase 2 - Crowdsourced Ideation API (V2 - Experimental)",
+                Version = "v2"
             });
 
             var scheme = new OpenApiSecurityScheme

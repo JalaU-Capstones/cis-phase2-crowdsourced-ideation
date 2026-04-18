@@ -13,7 +13,7 @@ public static class StatisticsEndpoints
 
     public static IEndpointRouteBuilder MapStatisticsEndpoints(this IEndpointRouteBuilder endpoints, string version = "v1")
     {
-        var group = endpoints.MapGroup($"/api/{version}/statistics")
+        var group = endpoints.MapGroup($"/{version}/statistics")
             .WithTags("Statistics");
 
         // Use version-specific adapter
@@ -57,7 +57,7 @@ public static class StatisticsEndpoints
 
     public static async Task<IResult> HandleTopTopics(
         HttpContext http,
-        [FromRoute] string version,
+        string version,
         int? limit,
         int? offset)
     {
@@ -71,7 +71,7 @@ public static class StatisticsEndpoints
 
     public static async Task<IResult> HandleMostVotedIdeas(
         HttpContext http,
-        [FromRoute] string version,
+        string version,
         int? limit,
         int? offset)
     {
@@ -86,7 +86,7 @@ public static class StatisticsEndpoints
     public static async Task<IResult> HandleTopicSummary(
         string topicId,
         HttpContext http,
-        [FromRoute] string version)
+        string version)
     {
         if (string.IsNullOrWhiteSpace(topicId))
             return TypedResults.BadRequest(new ErrorResponse("topicId is required."));
