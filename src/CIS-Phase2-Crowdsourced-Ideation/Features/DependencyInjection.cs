@@ -2,7 +2,6 @@ using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Statistics;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
-using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Features;
 
@@ -10,13 +9,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddFeatures(this IServiceCollection services)
     {
-        // Dual Persistence: MySQL for V1, MongoDB for V2
-        services.AddScoped<MySqlAdapter>();
-        services.AddScoped<MongoDbAdapter>();
-
-        // Register default services (fallback to MySQL if needed by other components)
-        services.AddScoped<IRepositoryAdapter>(sp => sp.GetRequiredService<MySqlAdapter>());
-
+        // Register services (they internally use the injected adapter)
         services.AddScoped<ITopicService, TopicService>();
         services.AddScoped<IIdeaService, IdeaService>();
         services.AddScoped<IVoteService, VoteService>();
@@ -27,17 +20,17 @@ public static class DependencyInjection
 
     public static WebApplication MapFeatures(this WebApplication app)
     {
-        // Map V1 endpoints (MySQL by default via filter in TopicEndpoints)
+        // V1 Endpoints
         app.MapTopicEndpoints("v1");
-        
-        // These currently don't have explicit versioning in MapIdeaEndpoints but they use /api/v1/ prefix in their implementation.
-        // I will ensure they are consistent.
-        app.MapIdeaEndpoints(); 
-        app.MapVoteEndpoints();
-        app.MapStatisticsEndpoints();
+        app.MapIdeaEndpoints("v1"); 
+        app.MapVoteEndpoints("v1");
+        app.MapStatisticsEndpoints("v1");
 
-        // Map V2 endpoints (MongoDB via filter in TopicEndpoints)
+        // V2 Endpoints
         app.MapTopicEndpoints("v2");
+        app.MapIdeaEndpoints("v2");
+        app.MapVoteEndpoints("v2");
+        app.MapStatisticsEndpoints("v2");
 
         return app;
     }
