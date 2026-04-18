@@ -23,13 +23,13 @@ public class VoteRepository(AppDbContext context) : IVoteRepository
     public async Task AddAsync(Vote vote)
     {
         context.Votes.Add(vote);
-        await context.SaveChangesAsync();
     }
 
     public async Task DeleteAsync(Vote vote)
     {
-        context.Votes.Remove(vote);
-        await context.SaveChangesAsync();
+        var existing = await context.Votes.FindAsync(vote.Id);
+        if (existing != null)
+            context.Votes.Remove(existing);
     }
 
     public async Task<bool> ExistsAsync(Guid id)

@@ -7,8 +7,9 @@ using Microsoft.EntityFrameworkCore;
 using Moq;
 using System.Security.Claims;
 using Xunit;
+using CIS.Phase2.CrowdsourcedIdeation.Features;
 
-namespace CIS_Phase2_Crowdsourced_Ideation.Tests.Features.Ideas;
+namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Ideas;
 
 public class IdeaServiceTests
 {
@@ -21,7 +22,8 @@ public class IdeaServiceTests
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
         _context = new AppDbContext(options);
-        _service = new IdeaService(_context);
+        var adapter = new TestRepositoryAdapter(_context);
+        _service = new IdeaService(adapter);
     }
 
     private ClaimsPrincipal CreateUser(Guid userId)
@@ -214,7 +216,17 @@ public class IdeaServiceTests
         var topicId = "topic-1";
         _context.Topics.Add(new Topic { Id = topicId, Title = "Topic 1" });
         var ownerId = Guid.NewGuid();
-        var idea = new Idea { Id = Guid.NewGuid(), TopicId = topicId, OwnerId = ownerId, Title = "Old Title", Description = "Old Desc", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow };
+        var originalUpdatedAt = DateTime.UtcNow.AddSeconds(-5);
+        var idea = new Idea 
+        { 
+            Id = Guid.NewGuid(), 
+            TopicId = topicId, 
+            OwnerId = ownerId, 
+            Title = "Old Title", 
+            Description = "Old Desc", 
+            CreatedAt = originalUpdatedAt, 
+            UpdatedAt = originalUpdatedAt 
+        };
         _context.Set<Idea>().Add(idea);
         await _context.SaveChangesAsync();
 
@@ -228,7 +240,7 @@ public class IdeaServiceTests
         Assert.NotNull(result);
         Assert.Equal(request.Title, result.Title);
         Assert.Equal(request.Description, result.Description);
-        Assert.True(result.UpdatedAt > idea.UpdatedAt);
+        Assert.True(result.UpdatedAt > originalUpdatedAt);
     }
 
     [Fact]

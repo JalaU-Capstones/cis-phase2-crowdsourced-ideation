@@ -15,7 +15,7 @@ public interface ITopicService
     Task<bool> DeleteTopicAsync(string id, ClaimsPrincipal user);
 }
 
-public class TopicService(IRepositoryAdapter adapter) : ITopicService
+public class TopicService(IRepositoryAdapter adapter, string version = "v1") : ITopicService
 {
     private static readonly string[] ValidSortFields = ["createdAt", "title", "updatedAt"];
     private static readonly string[] ValidOrders = ["asc", "desc"];
@@ -49,7 +49,11 @@ public class TopicService(IRepositoryAdapter adapter) : ITopicService
         if (pageSize <= 0)
             throw new ArgumentException("size must be >= 1.");
 
-        // 2. Validate sorting
+        // 2. Validate status
+        if (!string.IsNullOrEmpty(status) && !Enum.TryParse<TopicStatus>(status, ignoreCase: true, out _))
+            throw new ArgumentException("status must be 'OPEN' or 'CLOSED'.");
+
+        // 3. Validate sorting
         var sortField = sortBy ?? "createdAt";
         var sortOrder = order ?? "desc";
 
@@ -227,10 +231,10 @@ public class TopicService(IRepositoryAdapter adapter) : ITopicService
         return MapToWinningIdeaResponse(winner);
     }
 
-    private static TopicResponse ToResponse(Topic t, WinningIdeaResponse? winningIdea = null) =>
+    private TopicResponse ToResponse(Topic t, WinningIdeaResponse? winningIdea = null) =>
         new(t.Id, t.Title, t.Description, t.Status.ToString(), t.OwnerId, t.CreatedAt, t.UpdatedAt, winningIdea)
         {
-            Links = HateoasBuilder.ForTopic(t.Id, t.Status.ToString())
+            Links = HateoasBuilder.ForTopic(t.Id, t.Status.ToString(), version)
         };
 
     private static WinningIdeaResponse MapToWinningIdeaResponse(Idea idea) =>

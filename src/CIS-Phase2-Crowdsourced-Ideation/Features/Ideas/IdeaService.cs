@@ -16,7 +16,7 @@ public interface IIdeaService
     Task<bool> DeleteIdeaAsync(Guid id, ClaimsPrincipal user);
 }
 
-public class IdeaService(IRepositoryAdapter adapter) : IIdeaService
+public class IdeaService(IRepositoryAdapter adapter, string version = "v1") : IIdeaService
 {
     private static readonly string[] ValidSortFields = ["updatedAt"];
     private static readonly string[] ValidOrders = ["asc", "desc"];
@@ -214,11 +214,7 @@ public class IdeaService(IRepositoryAdapter adapter) : IIdeaService
         return true;
     }
 
-    /// <summary>
-    /// Maps an Idea entity to an IdeaResponse DTO including HATEOAS links (US 3.2).
-    /// <paramref name="topicIsOpen"/> controls whether the 'vote' link is included.
-    /// </summary>
-    private static IdeaResponse MapToResponse(Idea idea, bool topicIsOpen) =>
+    private IdeaResponse MapToResponse(Idea idea, bool topicIsOpen) =>
         new IdeaResponse(
             idea.Id,
             idea.TopicId,
@@ -230,6 +226,6 @@ public class IdeaService(IRepositoryAdapter adapter) : IIdeaService
             idea.IsWinning
         )
         {
-            Links = HateoasBuilder.ForIdea(idea.Id, idea.TopicId, topicIsOpen)
+            Links = HateoasBuilder.ForIdea(idea.Id, idea.TopicId, topicIsOpen, version)
         };
 }

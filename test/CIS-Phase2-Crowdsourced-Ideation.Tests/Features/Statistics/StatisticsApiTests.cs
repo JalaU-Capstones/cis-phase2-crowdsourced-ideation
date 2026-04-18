@@ -48,7 +48,7 @@ public sealed class StatisticsApiTests : IClassFixture<WebApplicationFactory<Pro
     public async Task TopTopics_ReturnsEmpty_WhenNoData()
     {
         var client = _factory.CreateClient();
-        var res = await client.GetAsync("/api/statistics/top-topics");
+        var res = await client.GetAsync("/api/v1/statistics/top-topics");
         res.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await res.Content.ReadFromJsonAsync<List<TopTopicDto>>();
@@ -63,7 +63,7 @@ public sealed class StatisticsApiTests : IClassFixture<WebApplicationFactory<Pro
     public async Task TopTopics_Returns400_ForInvalidPaging(string limit, string offset)
     {
         var client = _factory.CreateClient();
-        var res = await client.GetAsync($"/api/statistics/top-topics?limit={limit}&offset={offset}");
+        var res = await client.GetAsync($"/api/v1/statistics/top-topics?limit={limit}&offset={offset}");
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
@@ -71,7 +71,7 @@ public sealed class StatisticsApiTests : IClassFixture<WebApplicationFactory<Pro
     public async Task MostVotedIdeas_ReturnsEmpty_WhenNoData()
     {
         var client = _factory.CreateClient();
-        var res = await client.GetAsync("/api/statistics/most-voted-ideas");
+        var res = await client.GetAsync("/api/v1/statistics/most-voted-ideas");
         res.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await res.Content.ReadFromJsonAsync<List<MostVotedIdeaDto>>();
@@ -86,7 +86,7 @@ public sealed class StatisticsApiTests : IClassFixture<WebApplicationFactory<Pro
     public async Task MostVotedIdeas_Returns400_ForInvalidPaging(string limit, string offset)
     {
         var client = _factory.CreateClient();
-        var res = await client.GetAsync($"/api/statistics/most-voted-ideas?limit={limit}&offset={offset}");
+        var res = await client.GetAsync($"/api/v1/statistics/most-voted-ideas?limit={limit}&offset={offset}");
         res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
@@ -94,7 +94,7 @@ public sealed class StatisticsApiTests : IClassFixture<WebApplicationFactory<Pro
     public async Task TopicSummary_Returns404_WhenTopicDoesNotExist()
     {
         var client = _factory.CreateClient();
-        var res = await client.GetAsync($"/api/statistics/topic/{Guid.NewGuid()}/summary");
+        var res = await client.GetAsync($"/api/v1/statistics/topic/{Guid.NewGuid()}/summary");
         res.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -145,7 +145,7 @@ public sealed class StatisticsApiTests : IClassFixture<WebApplicationFactory<Pro
         });
 
         var client = _factory.CreateClient();
-        var res = await client.GetAsync($"/api/statistics/topic/{topicId}/summary");
+        var res = await client.GetAsync($"/api/v1/statistics/topic/{topicId}/summary");
         res.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await res.Content.ReadFromJsonAsync<TopicSummaryDto>();
@@ -190,10 +190,10 @@ public sealed class StatisticsApiTests : IClassFixture<WebApplicationFactory<Pro
         });
 
         var client = _factory.CreateClient();
-        var all = await client.GetFromJsonAsync<List<TopTopicDto>>("/api/statistics/top-topics?limit=10&offset=0");
+        var all = await client.GetFromJsonAsync<List<TopTopicDto>>("/api/v1/statistics/top-topics?limit=10&offset=0");
         all!.Select(x => x.TopicTitle).Should().ContainInOrder("T2", "T1", "T3");
 
-        var page = await client.GetFromJsonAsync<List<TopTopicDto>>("/api/statistics/top-topics?limit=1&offset=1");
+        var page = await client.GetFromJsonAsync<List<TopTopicDto>>("/api/v1/statistics/top-topics?limit=1&offset=1");
         page.Should().NotBeNull();
         var p = page!;
         p.Should().HaveCount(1);
@@ -219,7 +219,7 @@ public sealed class StatisticsApiTests : IClassFixture<WebApplicationFactory<Pro
         });
 
         var client = _factory.CreateClient();
-        var data = await client.GetFromJsonAsync<List<MostVotedIdeaDto>>("/api/statistics/most-voted-ideas?limit=10&offset=0");
+        var data = await client.GetFromJsonAsync<List<MostVotedIdeaDto>>("/api/v1/statistics/most-voted-ideas?limit=10&offset=0");
         data.Should().NotBeNull();
         var d = data!;
         d.Should().HaveCount(2);

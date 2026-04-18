@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 
@@ -14,38 +15,35 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 /// </summary>
 public static class TopicEndpoints
 {
-    private const string TitleLengthErrorMessage = "Title is required and must be at most 200 characters.";
-    private const string TopicNotFoundErrorMessage = "Topic not found.";
-    private const string ForbiddenErrorMessage = "You are not authorized to modify this topic.";
-    private const string StatusErrorMessage = "Status must be 'OPEN' or 'CLOSED'.";
-    private const string TopicCannotBeReopenedMessage = "This topic is closed and cannot be reopened.";
-    private const string UserIdErrorMessage = "User identity not found or invalid.";
-    private static readonly string[] ValidSortFields = ["createdAt", "title", "updatedAt"];
-    private static readonly string[] ValidOrders = ["asc", "desc"];
-
     /// <summary>
     /// Maps topic endpoints to the routing system.
     /// </summary>
-    public static IEndpointRouteBuilder MapTopicEndpoints(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapTopicEndpoints(this IEndpointRouteBuilder endpoints, string version = "v1")
     {
-        var group = endpoints.MapGroup("/api/v1/topics")
+        var group = endpoints.MapGroup($"/api/{version}/topics")
             .WithTags("Topics");
+
+        // Use version-specific adapter
+        group.AddEndpointFilter(async (context, next) =>
+        {
+            var adapter = version == "v2" 
+                ? (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MongoDbAdapter>()
+                : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
+            
+            context.HttpContext.Items["RepositoryAdapter"] = adapter;
+            return await next(context);
+        });
 
         // Public read access
         group.MapGet("/", HandleGetAllTopics)
-            .WithName("GetAllTopics")
-            .WithSummary("Get all topics (public)")
-            .WithDescription("Public endpoint. Returns paginated topics with filtering and sorting support.")
+            .WithName($"GetAllTopics_{version}")
+            .WithSummary($"Get all topics ({version})")
             .Produces<PagedResponse<TopicResponse>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
         group.MapGet("/{id}", HandleGetTopicById)
-            .WithName("GetTopicById")
-            .WithSummary("Get topic by id (public)")
-            .WithDescription("""
-                Public endpoint. Returns a topic by its id.
-                When a topic is CLOSED, the response includes the winning idea (the idea with IsWinning=true), if present.
-                """)
+            .WithName($"GetTopicById_{version}")
+            .WithSummary($"Get topic by id ({version})")
             .Produces<TopicResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
@@ -54,20 +52,15 @@ public static class TopicEndpoints
             .RequireAuthorization();
 
         protectedGroup.MapPost("/", HandleCreateTopic)
-            .WithName("CreateTopic")
-            .WithSummary("Create a topic (authenticated)")
-            .WithDescription("Only authenticated users can create topics. The creator becomes the owner.")
+            .WithName($"CreateTopic_{version}")
+            .WithSummary($"Create a topic ({version})")
             .Produces<TopicResponse>(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status400BadRequest);
 
         protectedGroup.MapPut("/{id}", HandleUpdateTopic)
-            .WithName("UpdateTopic")
-            .WithSummary("Update a topic (owner only)")
-            .WithDescription("""
-                Only the topic owner can update title/description/status.
-                Once a topic is CLOSED, it cannot be reopened (status cannot be changed back to OPEN).
-                """)
+            .WithName($"UpdateTopic_{version}")
+            .WithSummary($"Update a topic ({version})")
             .Produces<TopicResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
@@ -75,9 +68,8 @@ public static class TopicEndpoints
             .Produces(StatusCodes.Status400BadRequest);
 
         protectedGroup.MapDelete("/{id}", HandleDeleteTopic)
-            .WithName("DeleteTopic")
-            .WithSummary("Delete a topic (owner only)")
-            .WithDescription("Only the topic owner can delete. Deleting a topic cascades delete related ideas and votes.")
+            .WithName($"DeleteTopic_{version}")
+            .WithSummary($"Delete a topic ({version})")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
@@ -86,17 +78,22 @@ public static class TopicEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Retrieves all topics.
-    /// </summary>
-   public static async Task<IResult> HandleGetAllTopics(
-    ITopicService service,
-    [FromQuery] int? page, [FromQuery] int? size,
-    [FromQuery] string? status, [FromQuery] string? ownerId,
-    [FromQuery] string? sortBy, [FromQuery] string? order)
+    private static ITopicService GetService(HttpContext http, string version)
+    {
+        var adapter = (IRepositoryAdapter)http.Items["RepositoryAdapter"]!;
+        return new TopicService(adapter, version);
+    }
+
+    public static async Task<IResult> HandleGetAllTopics(
+        HttpContext http,
+        [FromRoute] string version,
+        [FromQuery] int? page, [FromQuery] int? size,
+        [FromQuery] string? status, [FromQuery] string? ownerId,
+        [FromQuery] string? sortBy, [FromQuery] string? order)
     {
         try
         {
+            var service = GetService(http, version);
             var response = await service.GetAllTopicsAsync(page, size, status, ownerId, sortBy, order);
             return TypedResults.Ok(response);
         }
@@ -106,11 +103,10 @@ public static class TopicEndpoints
         }
     }
 
-    /// <summary>
-    /// Retrieves a topic by its unique identifier.
-    /// </summary>
-    public static async Task<Results<Ok<TopicResponse>, NotFound>> HandleGetTopicById(string id, ITopicService service)
+    public static async Task<Results<Ok<TopicResponse>, NotFound>> HandleGetTopicById(
+        string id, HttpContext http, [FromRoute] string version)
     {
+        var service = GetService(http, version);
         var topic = await service.GetTopicByIdAsync(id);
         if (topic is null)
             return TypedResults.NotFound();
@@ -118,18 +114,17 @@ public static class TopicEndpoints
         return TypedResults.Ok(topic);
     }
 
-    /// <summary>
-    /// Creates a new topic.
-    /// </summary>
     public static async Task<Results<Created<TopicResponse>, BadRequest<object>, UnauthorizedHttpResult>> HandleCreateTopic(
         CreateTopicRequest request,
         ClaimsPrincipal user,
-        ITopicService service)
+        HttpContext http,
+        [FromRoute] string version)
     {
         try
         {
+            var service = GetService(http, version);
             var topic = await service.CreateTopicAsync(request, user);
-            return TypedResults.Created($"/api/v1/topics/{topic.Id}", topic);
+            return TypedResults.Created($"/api/{version}/topics/{topic.Id}", topic);
         }
         catch (ArgumentException ex)
         {
@@ -141,18 +136,16 @@ public static class TopicEndpoints
         }
     }
 
-    /// <summary>
-    /// Updates an existing topic. Only the owner can perform this action.
-    /// </summary>
     public static async Task<Results<Ok<TopicResponse>, NotFound, BadRequest<object>, ForbidHttpResult>> HandleUpdateTopic(
         string id,
         UpdateTopicRequest request,
         ClaimsPrincipal user,
-        ITopicService service,
-        HttpContext http)
+        HttpContext http,
+        [FromRoute] string version)
     {
         try
         {
+            var service = GetService(http, version);
             var topic = await service.UpdateTopicAsync(id, request, user);
             if (topic == null) return TypedResults.NotFound();
 
@@ -173,54 +166,15 @@ public static class TopicEndpoints
         }
     }
 
-    private static async Task<WinningIdeaResponse?> MarkWinningIdeaAsync(AppDbContext db, string topicId)
-    {
-        // Winning idea rule (US 2.2):
-        // When a topic is CLOSED, set IsWinning=true for the idea with the most votes.
-        // Since IsWinning is stored inside ideas.content JSON, we must materialize ideas first.
-        var ideas = await db.Ideas
-            .Where(i => i.TopicId == topicId)
-            .ToListAsync();
-
-        if (ideas.Count == 0)
-            return null;
-
-        var ideaIds = ideas.Select(i => i.Id).ToList();
-
-        var counts = await db.Votes
-            .AsNoTracking()
-            .Where(v => ideaIds.Contains(v.IdeaId))
-            .GroupBy(v => v.IdeaId)
-            .Select(g => new { IdeaId = g.Key, Count = g.Count() })
-            .ToListAsync();
-
-        var countsByIdeaId = counts.ToDictionary(x => x.IdeaId, x => x.Count);
-
-        var winner = ideas
-            .OrderByDescending(i => countsByIdeaId.GetValueOrDefault(i.Id, 0))
-            .ThenBy(i => i.CreatedAt)
-            .ThenBy(i => i.Id)
-            .First();
-
-        foreach (var idea in ideas)
-        {
-            idea.IsWinning = idea.Id == winner.Id;
-        }
-
-        return MapToWinningIdeaResponse(winner);
-    }
-
-
-    /// <summary>
-    /// Deletes a topic. Only the owner can perform this action.
-    /// </summary>
     public static async Task<Results<Ok<object>, NotFound, ForbidHttpResult>> HandleDeleteTopic(
         string id,
         ClaimsPrincipal user,
-        ITopicService service)
+        HttpContext http,
+        [FromRoute] string version)
     {
         try
         {
+            var service = GetService(http, version);
             var success = await service.DeleteTopicAsync(id, user);
             if (!success) return TypedResults.NotFound();
 
@@ -235,17 +189,4 @@ public static class TopicEndpoints
             return TypedResults.Forbid();
         }
     }
-
-    /// <summary>
-    /// Converts a <see cref="Topic"/> entity to a <see cref="TopicResponse"/> DTO.
-    /// Includes HATEOAS links (US 3.2).
-    /// </summary>
-    internal static TopicResponse ToResponse(Topic t, WinningIdeaResponse? winningIdea = null) =>
-        new(t.Id, t.Title, t.Description, t.Status.ToString(), t.OwnerId, t.CreatedAt, t.UpdatedAt, winningIdea)
-        {
-            Links = HateoasBuilder.ForTopic(t.Id, t.Status.ToString())
-        };
-
-    private static WinningIdeaResponse MapToWinningIdeaResponse(Idea idea) =>
-        new(idea.Id, idea.TopicId, idea.OwnerId, idea.Title, idea.Description, idea.CreatedAt, idea.UpdatedAt, idea.IsWinning);
 }
