@@ -22,7 +22,7 @@ public sealed class StatisticsEndpointsTests
     public async Task TopTopics_ReturnsBadRequest_WhenLimitIsZero()
     {
         var http = CreateMockHttpContext();
-        var res = await StatisticsEndpoints.HandleTopTopics(http, "v1", limit: 0, offset: 0);
+        var res = await StatisticsEndpoints.HandleTopTopics(http, limit: 0, offset: 0, version: "v1");
         res.Should().BeOfType<BadRequest<ErrorResponse>>();
     }
 
@@ -30,7 +30,7 @@ public sealed class StatisticsEndpointsTests
     public async Task MostVotedIdeas_ReturnsBadRequest_WhenOffsetIsNegative()
     {
         var http = CreateMockHttpContext();
-        var res = await StatisticsEndpoints.HandleMostVotedIdeas(http, "v1", limit: 10, offset: -1);
+        var res = await StatisticsEndpoints.HandleMostVotedIdeas(http, limit: 10, offset: -1, version: "v1");
         res.Should().BeOfType<BadRequest<ErrorResponse>>();
     }
 

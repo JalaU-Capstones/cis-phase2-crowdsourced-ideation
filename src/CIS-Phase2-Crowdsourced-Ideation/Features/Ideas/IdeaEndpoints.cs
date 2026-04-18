@@ -14,10 +14,9 @@ public static class IdeaEndpoints
 {
     public static void MapIdeaEndpoints(this IEndpointRouteBuilder app, string version = "v1")
     {
-        var group = app.MapGroup($"/{version}/ideas")
+        var group = app.MapGroup($"/api/{version}/ideas")
             .WithTags("Ideas");
 
-        // Use version-specific adapter
         group.AddEndpointFilter(async (context, next) =>
         {
             var adapter = version == "v2" 
@@ -25,32 +24,34 @@ public static class IdeaEndpoints
                 : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
             
             context.HttpContext.Items["RepositoryAdapter"] = adapter;
-            context.HttpContext.Items["ApiVersion"] = version;
             return await next(context);
         });
 
-        group.MapGet("/", GetAllIdeas)
+        group.MapGet("/", (HttpContext http, int? page, int? size, string? sortBy, string? order) =>
+                GetAllIdeas(http, page, size, sortBy, order, version))
             .WithName($"GetAllIdeas_{version}")
             .WithSummary($"Get all ideas ({version})")
             .Produces<PagedResponse<IdeaResponse>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
-        group.MapGet("/{id:guid}", GetIdea)
+        group.MapGet("/{id:guid}", (Guid id, HttpContext http) =>
+                GetIdea(id, http, version))
             .WithName($"GetIdea_{version}")
             .WithSummary($"Get an idea by its ID ({version})")
             .Produces<IdeaResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
-        group.MapGet("/topic/{topicId}", GetIdeasByTopic)
+        group.MapGet("/topic/{topicId}", (string topicId, HttpContext http) =>
+                GetIdeasByTopic(topicId, http, version))
             .WithName($"GetIdeasByTopic_{version}")
             .WithSummary($"Get all ideas for a specific topic ({version})")
             .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK);
 
-        // Protected write access
         var protectedGroup = group.MapGroup("/")
             .RequireAuthorization();
 
-        protectedGroup.MapPost("/", CreateIdea)
+        protectedGroup.MapPost("/", (CreateIdeaRequest request, HttpContext http, ClaimsPrincipal user) =>
+                CreateIdea(request, http, user, version))
             .WithName($"CreateIdea_{version}")
             .WithSummary($"Create a new idea ({version})")
             .Produces<IdeaResponse>(StatusCodes.Status201Created)
@@ -58,7 +59,8 @@ public static class IdeaEndpoints
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status400BadRequest);
 
-        protectedGroup.MapPut("/{id:guid}", UpdateIdea)
+        protectedGroup.MapPut("/{id:guid}", (Guid id, UpdateIdeaRequest request, HttpContext http, ClaimsPrincipal user) =>
+                UpdateIdea(id, request, http, user, version))
             .WithName($"UpdateIdea_{version}")
             .WithSummary($"Update an existing idea ({version})")
             .Produces<IdeaResponse>(StatusCodes.Status200OK)
@@ -67,7 +69,8 @@ public static class IdeaEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status400BadRequest);
 
-        protectedGroup.MapDelete("/{id:guid}", DeleteIdea)
+        protectedGroup.MapDelete("/{id:guid}", (Guid id, HttpContext http, ClaimsPrincipal user) =>
+                DeleteIdea(id, http, user, version))
             .WithName($"DeleteIdea_{version}")
             .WithSummary($"Delete an idea ({version})")
             .Produces(StatusCodes.Status200OK)
@@ -76,15 +79,14 @@ public static class IdeaEndpoints
             .Produces(StatusCodes.Status404NotFound);
     }
 
-    private static IIdeaService GetService(HttpContext http)
+    private static IIdeaService GetService(HttpContext http, string version)
     {
         var adapter = (IRepositoryAdapter)http.Items["RepositoryAdapter"]!;
-        var version = (string)http.Items["ApiVersion"]!;
         return new IdeaService(adapter, version);
     }
 
     private static async Task<IResult> CreateIdea(
-        CreateIdeaRequest request, HttpContext http, ClaimsPrincipal user)
+        CreateIdeaRequest request, HttpContext http, ClaimsPrincipal user, string version)
     {
         if (string.IsNullOrWhiteSpace(request.TopicId) || string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Description))
         {
@@ -93,9 +95,8 @@ public static class IdeaEndpoints
 
         try 
         {
-            var service = GetService(http);
+            var service = GetService(http, version);
             var result = await service.CreateIdeaAsync(request, user);
-            var version = (string)http.Items["ApiVersion"]!;
             return TypedResults.Created($"/api/{version}/ideas/{result.Id}", result);
         }
         catch (ArgumentException ex)
@@ -113,11 +114,12 @@ public static class IdeaEndpoints
         [FromQuery] int? page,
         [FromQuery] int? size,
         [FromQuery] string? sortBy,
-        [FromQuery] string? order)
+        [FromQuery] string? order,
+        string version)
     {
         try
         {
-            var service = GetService(http);
+            var service = GetService(http, version);
             var result = await service.GetAllIdeasAsync(page, size, sortBy, order);
             return TypedResults.Ok(result);
         }
@@ -127,22 +129,22 @@ public static class IdeaEndpoints
         }
     }
 
-    private static async Task<IResult> GetIdea(Guid id, HttpContext http)
+    private static async Task<IResult> GetIdea(Guid id, HttpContext http, string version)
     {
-        var service = GetService(http);
+        var service = GetService(http, version);
         var result = await service.GetIdeaByIdAsync(id);
         return result == null ? TypedResults.NotFound() : TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> GetIdeasByTopic(string topicId, HttpContext http)
+    private static async Task<IResult> GetIdeasByTopic(string topicId, HttpContext http, string version)
     {
-        var service = GetService(http);
+        var service = GetService(http, version);
         var result = await service.GetIdeasByTopicIdAsync(topicId);
         return TypedResults.Ok(result);
     }
 
     private static async Task<IResult> UpdateIdea(
-        Guid id, UpdateIdeaRequest request, HttpContext http, ClaimsPrincipal user)
+        Guid id, UpdateIdeaRequest request, HttpContext http, ClaimsPrincipal user, string version)
     {
         if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Description))
         {
@@ -151,7 +153,7 @@ public static class IdeaEndpoints
 
         try
         {
-            var service = GetService(http);
+            var service = GetService(http, version);
             var result = await service.UpdateIdeaAsync(id, request, user);
             return result == null ? TypedResults.NotFound() : TypedResults.Ok(result);
         }
@@ -161,11 +163,11 @@ public static class IdeaEndpoints
         }
     }
 
-    private static async Task<IResult> DeleteIdea(Guid id, HttpContext http, ClaimsPrincipal user)
+    private static async Task<IResult> DeleteIdea(Guid id, HttpContext http, ClaimsPrincipal user, string version)
     {
         try
         {
-            var service = GetService(http);
+            var service = GetService(http, version);
             var result = await service.DeleteIdeaAsync(id, user);
             return result
                 ? TypedResults.Ok(new { message = "Idea deleted. All votes related to this idea were deleted as well.", ideaId = id })

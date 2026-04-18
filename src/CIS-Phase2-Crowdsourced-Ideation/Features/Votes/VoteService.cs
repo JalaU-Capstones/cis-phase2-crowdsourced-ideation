@@ -30,18 +30,14 @@ public sealed class VoteService(IRepositoryAdapter adapter, string version = "v1
 
     private async Task<Guid> ResolveUserIdAsync(ClaimsPrincipal user)
     {
-        var raw = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(raw))
-            throw new VoteUnauthorizedException("User identity not found or invalid");
-
-        if (Guid.TryParse(raw, out var userId))
-            return userId;
-
-        var dbUser = await adapter.Users.GetByLoginAsync(raw);
-        if (dbUser is null || !Guid.TryParse(dbUser.Id, out userId))
-            throw new VoteUnauthorizedException("User identity not found or invalid");
-
-        return userId;
+        try
+        {
+            return await UserIdentityResolver.ResolveOrProvisionUserIdAsync(adapter, user);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            throw new VoteUnauthorizedException(ex.Message);
+        }
     }
 
     public async Task<IReadOnlyList<VoteResponse>> GetAllAsync()

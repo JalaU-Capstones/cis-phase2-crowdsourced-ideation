@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System.Reflection;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure;
 
@@ -126,6 +127,19 @@ public static class DependencyInjection
                 Version = "v2"
             });
 
+            // Ensure each document only contains its own versioned endpoints.
+            c.DocInclusionPredicate((docName, apiDesc) =>
+            {
+                var rel = apiDesc.RelativePath ?? string.Empty;
+                rel = rel.Split('?', 2)[0].TrimStart('/');
+                return docName switch
+                {
+                    "v1" => rel.StartsWith("api/v1/", StringComparison.OrdinalIgnoreCase),
+                    "v2" => rel.StartsWith("api/v2/", StringComparison.OrdinalIgnoreCase),
+                    _ => false
+                };
+            });
+
             var scheme = new OpenApiSecurityScheme
             {
                 Name        = "Authorization",
@@ -146,6 +160,14 @@ public static class DependencyInjection
             {
                 [scheme] = Array.Empty<string>()
             });
+
+            // Enrich Swagger with XML comments from the codebase.
+            var xmlName = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+            var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlName);
+            if (File.Exists(xmlPath))
+            {
+                c.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+            }
         });
 
         return services;

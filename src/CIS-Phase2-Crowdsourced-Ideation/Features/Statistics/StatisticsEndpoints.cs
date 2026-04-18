@@ -13,10 +13,9 @@ public static class StatisticsEndpoints
 
     public static IEndpointRouteBuilder MapStatisticsEndpoints(this IEndpointRouteBuilder endpoints, string version = "v1")
     {
-        var group = endpoints.MapGroup($"/{version}/statistics")
+        var group = endpoints.MapGroup($"/api/{version}/statistics")
             .WithTags("Statistics");
 
-        // Use version-specific adapter
         group.AddEndpointFilter(async (context, next) =>
         {
             var adapter = version == "v2" 
@@ -24,23 +23,25 @@ public static class StatisticsEndpoints
                 : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
             
             context.HttpContext.Items["RepositoryAdapter"] = adapter;
-            context.HttpContext.Items["ApiVersion"] = version;
             return await next(context);
         });
 
-        group.MapGet("/top-topics", HandleTopTopics)
+        group.MapGet("/top-topics", (HttpContext http, int? limit, int? offset) =>
+                HandleTopTopics(http, limit, offset, version))
             .WithName($"GetTopTopics_{version}")
             .WithSummary($"Get top topics ({version})")
             .Produces<IReadOnlyList<TopTopicDto>>(StatusCodes.Status200OK)
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
-        group.MapGet("/most-voted-ideas", HandleMostVotedIdeas)
+        group.MapGet("/most-voted-ideas", (HttpContext http, int? limit, int? offset) =>
+                HandleMostVotedIdeas(http, limit, offset, version))
             .WithName($"GetMostVotedIdeas_{version}")
             .WithSummary($"Get most voted ideas ({version})")
             .Produces<IReadOnlyList<MostVotedIdeaDto>>(StatusCodes.Status200OK)
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
-        group.MapGet("/topic/{topicId}/summary", HandleTopicSummary)
+        group.MapGet("/topic/{topicId}/summary", (string topicId, HttpContext http) =>
+                HandleTopicSummary(topicId, http, version))
             .WithName($"GetTopicSummary_{version}")
             .WithSummary($"Get topic summary ({version})")
             .Produces<TopicSummaryDto>(StatusCodes.Status200OK)
@@ -50,22 +51,22 @@ public static class StatisticsEndpoints
         return endpoints;
     }
 
-    private static IStatisticsService GetService(HttpContext http)
+    private static IStatisticsService GetService(HttpContext http, string version)
     {
         var adapter = (IRepositoryAdapter)http.Items["RepositoryAdapter"]!;
-        var version = (string)http.Items["ApiVersion"]!;
         return new StatisticsService(adapter, version);
     }
 
     public static async Task<IResult> HandleTopTopics(
         HttpContext http,
         int? limit,
-        int? offset)
+        int? offset,
+        string version)
     {
         if (!TryValidatePaging(limit, offset, out var l, out var o, out var error))
             return TypedResults.BadRequest(new ErrorResponse(error));
 
-        var service = GetService(http);
+        var service = GetService(http, version);
         var data = await service.GetTopTopicsAsync(l, o);
         return TypedResults.Ok(data);
     }
@@ -73,24 +74,26 @@ public static class StatisticsEndpoints
     public static async Task<IResult> HandleMostVotedIdeas(
         HttpContext http,
         int? limit,
-        int? offset)
+        int? offset,
+        string version)
     {
         if (!TryValidatePaging(limit, offset, out var l, out var o, out var error))
             return TypedResults.BadRequest(new ErrorResponse(error));
 
-        var service = GetService(http);
+        var service = GetService(http, version);
         var data = await service.GetMostVotedIdeasAsync(l, o);
         return TypedResults.Ok(data);
     }
 
     public static async Task<IResult> HandleTopicSummary(
         string topicId,
-        HttpContext http)
+        HttpContext http,
+        string version)
     {
         if (string.IsNullOrWhiteSpace(topicId))
             return TypedResults.BadRequest(new ErrorResponse("topicId is required."));
 
-        var service = GetService(http);
+        var service = GetService(http, version);
         var summary = await service.GetTopicSummaryAsync(topicId);
         return summary is null ? TypedResults.NotFound() : TypedResults.Ok(summary);
     }

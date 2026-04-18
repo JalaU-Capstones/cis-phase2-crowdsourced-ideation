@@ -123,3 +123,354 @@ curl http://localhost:5257/api/v2/topics
 ```bash
 dotnet test
 ```
+
+## 11. Complete API Examples (V1 + V2) with HATEOAS `_links`
+
+Notes:
+- All read endpoints are public unless explicitly marked as authenticated.
+- All write endpoints require `Authorization: Bearer $TOKEN`.
+- All resource responses include `_links` and these links stay in the same API version (`/api/v1/*` links in v1 responses, `/api/v2/*` links in v2 responses).
+
+### 11.1. Topics
+
+Create a topic (Authenticated):
+```bash
+TOKEN="your_jwt_token_here"
+
+# V1 (MySQL)
+curl -X POST http://localhost:5257/api/v1/topics \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "V1 Topic", "description": "Stored in MySQL" }'
+
+# V2 (MongoDB)
+curl -X POST http://localhost:5257/api/v2/topics \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "V2 Topic", "description": "Stored in MongoDB" }'
+```
+
+Example response (201 Created):
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "title": "V2 Topic",
+  "description": "Stored in MongoDB",
+  "status": "OPEN",
+  "ownerId": "550e8400-e29b-41d4-a716-446655440001",
+  "createdAt": "2026-03-30T10:00:00Z",
+  "updatedAt": "2026-03-30T10:00:00Z",
+  "winningIdea": null,
+  "_links": [
+    { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "self" },
+    { "href": "api/v2/ideas/topic/550e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "ideas" },
+    { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "PUT", "rel": "update" },
+    { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "DELETE", "rel": "delete" }
+  ]
+}
+```
+
+Get all topics (Public):
+```bash
+# V1
+curl "http://localhost:5257/api/v1/topics?page=0&size=10&status=OPEN&sortBy=createdAt&order=desc"
+
+# V2
+curl "http://localhost:5257/api/v2/topics?page=0&size=10&status=OPEN&sortBy=createdAt&order=desc"
+```
+
+Get a topic by id (Public):
+```bash
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/topics/$TOPIC_ID"
+
+# V2
+curl "http://localhost:5257/api/v2/topics/$TOPIC_ID"
+```
+
+Update a topic (Owner only):
+```bash
+TOKEN="your_jwt_token_here"
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X PUT "http://localhost:5257/api/v1/topics/$TOPIC_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "Updated Title", "description": "Updated description", "status": "CLOSED" }'
+
+# V2
+curl -X PUT "http://localhost:5257/api/v2/topics/$TOPIC_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "Updated Title", "description": "Updated description", "status": "CLOSED" }'
+```
+
+Delete a topic (Owner only):
+```bash
+TOKEN="your_jwt_token_here"
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X DELETE "http://localhost:5257/api/v1/topics/$TOPIC_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+# V2
+curl -X DELETE "http://localhost:5257/api/v2/topics/$TOPIC_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 11.2. Ideas
+
+Create an idea (Authenticated):
+```bash
+TOKEN="your_jwt_token_here"
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X POST http://localhost:5257/api/v1/ideas \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "topicId": "'"$TOPIC_ID"'", "title": "My Idea", "description": "Some details" }'
+
+# V2
+curl -X POST http://localhost:5257/api/v2/ideas \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "topicId": "'"$TOPIC_ID"'", "title": "My Idea", "description": "Some details" }'
+```
+
+Example response (201 Created):
+```json
+{
+  "id": "660e8400-e29b-41d4-a716-446655440000",
+  "topicId": "550e8400-e29b-41d4-a716-446655440000",
+  "ownerId": "550e8400-e29b-41d4-a716-446655440001",
+  "title": "My Idea",
+  "description": "Some details",
+  "createdAt": "2026-03-30T11:00:00Z",
+  "updatedAt": "2026-03-30T11:00:00Z",
+  "isWinning": false,
+  "_links": [
+    { "href": "api/v2/ideas/660e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "self" },
+    { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "topic" },
+    { "href": "api/v2/votes/idea/660e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "votes" },
+    { "href": "api/v2/ideas/660e8400-e29b-41d4-a716-446655440000", "method": "PUT", "rel": "update" },
+    { "href": "api/v2/ideas/660e8400-e29b-41d4-a716-446655440000", "method": "DELETE", "rel": "delete" },
+    { "href": "api/v2/votes", "method": "POST", "rel": "vote" }
+  ]
+}
+```
+
+Get all ideas (Public):
+```bash
+# V1
+curl "http://localhost:5257/api/v1/ideas?page=0&size=10&sortBy=updatedAt&order=desc"
+
+# V2
+curl "http://localhost:5257/api/v2/ideas?page=0&size=10&sortBy=updatedAt&order=desc"
+```
+
+Get an idea by id (Public):
+```bash
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/ideas/$IDEA_ID"
+
+# V2
+curl "http://localhost:5257/api/v2/ideas/$IDEA_ID"
+```
+
+Get ideas by topic (Public):
+```bash
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/ideas/topic/$TOPIC_ID"
+
+# V2
+curl "http://localhost:5257/api/v2/ideas/topic/$TOPIC_ID"
+```
+
+Update an idea (Owner only):
+```bash
+TOKEN="your_jwt_token_here"
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X PUT "http://localhost:5257/api/v1/ideas/$IDEA_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "Updated title", "description": "Updated description" }'
+
+# V2
+curl -X PUT "http://localhost:5257/api/v2/ideas/$IDEA_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "Updated title", "description": "Updated description" }'
+```
+
+Delete an idea (Owner only):
+```bash
+TOKEN="your_jwt_token_here"
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X DELETE "http://localhost:5257/api/v1/ideas/$IDEA_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+# V2
+curl -X DELETE "http://localhost:5257/api/v2/ideas/$IDEA_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 11.3. Votes
+
+Cast a vote (Authenticated):
+```bash
+TOKEN="your_jwt_token_here"
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X POST http://localhost:5257/api/v1/votes \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "ideaId": "'"$IDEA_ID"'" }'
+
+# V2
+curl -X POST http://localhost:5257/api/v2/votes \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "ideaId": "'"$IDEA_ID"'" }'
+```
+
+Example response (201 Created):
+```json
+{
+  "id": "770e8400-e29b-41d4-a716-446655440000",
+  "ideaId": "660e8400-e29b-41d4-a716-446655440000",
+  "ideaTitle": "My Idea",
+  "topicId": "550e8400-e29b-41d4-a716-446655440000",
+  "topicTitle": "V2 Topic",
+  "_links": [
+    { "href": "api/v2/votes/idea/660e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "self" },
+    { "href": "api/v2/ideas/660e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "idea" },
+    { "href": "api/v2/votes/770e8400-e29b-41d4-a716-446655440000", "method": "DELETE", "rel": "remove" }
+  ]
+}
+```
+
+Get all votes (Public):
+```bash
+# V1
+curl "http://localhost:5257/api/v1/votes"
+
+# V2
+curl "http://localhost:5257/api/v2/votes"
+```
+
+Get votes by idea (Public):
+```bash
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/votes/idea/$IDEA_ID"
+
+# V2
+curl "http://localhost:5257/api/v2/votes/idea/$IDEA_ID"
+```
+
+Get vote by id (Public):
+```bash
+VOTE_ID="770e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/votes/$VOTE_ID"
+
+# V2
+curl "http://localhost:5257/api/v2/votes/$VOTE_ID"
+```
+
+Update a vote (Owner only):
+```bash
+TOKEN="your_jwt_token_here"
+VOTE_ID="770e8400-e29b-41d4-a716-446655440000"
+NEW_IDEA_ID="880e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X PUT "http://localhost:5257/api/v1/votes/$VOTE_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "ideaId": "'"$NEW_IDEA_ID"'" }'
+
+# V2
+curl -X PUT "http://localhost:5257/api/v2/votes/$VOTE_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "ideaId": "'"$NEW_IDEA_ID"'" }'
+```
+
+Delete a vote (Owner only):
+```bash
+TOKEN="your_jwt_token_here"
+VOTE_ID="770e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X DELETE "http://localhost:5257/api/v1/votes/$VOTE_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+# V2
+curl -X DELETE "http://localhost:5257/api/v2/votes/$VOTE_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 11.4. Statistics
+
+Top topics (Public):
+```bash
+# V1
+curl "http://localhost:5257/api/v1/statistics/top-topics?limit=10&offset=0"
+
+# V2
+curl "http://localhost:5257/api/v2/statistics/top-topics?limit=10&offset=0"
+```
+
+Example response (200 OK):
+```json
+[
+  {
+    "topicId": "550e8400-e29b-41d4-a716-446655440000",
+    "topicTitle": "V2 Topic",
+    "status": "OPEN",
+    "ideasCount": 3,
+    "votesCount": 12,
+    "_links": [
+      { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "topic" },
+      { "href": "api/v2/statistics/topic/550e8400-e29b-41d4-a716-446655440000/summary", "method": "GET", "rel": "summary" }
+    ]
+  }
+]
+```
+
+Most voted ideas (Public):
+```bash
+# V1
+curl "http://localhost:5257/api/v1/statistics/most-voted-ideas?limit=10&offset=0"
+
+# V2
+curl "http://localhost:5257/api/v2/statistics/most-voted-ideas?limit=10&offset=0"
+```
+
+Topic summary (Public):
+```bash
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/statistics/topic/$TOPIC_ID/summary"
+
+# V2
+curl "http://localhost:5257/api/v2/statistics/topic/$TOPIC_ID/summary"
+```

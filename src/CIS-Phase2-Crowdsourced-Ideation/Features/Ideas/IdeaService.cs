@@ -22,20 +22,7 @@ public class IdeaService(IRepositoryAdapter adapter, string version = "v1") : II
     private static readonly string[] ValidOrders = ["asc", "desc"];
     private async Task<Guid> ResolveUserIdAsync(ClaimsPrincipal user)
     {
-        var raw = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(raw))
-            throw new UnauthorizedAccessException("User identity not found or invalid");
-
-        // Tests and some JWT setups provide the user id directly as a GUID.
-        if (Guid.TryParse(raw, out var userId))
-            return userId;
-
-        // Phase 1 integration typically provides login/subject; map to DB user record to get the GUID id.
-        var dbUser = await adapter.Users.GetByLoginAsync(raw);
-        if (dbUser == null || !Guid.TryParse(dbUser.Id, out userId))
-            throw new UnauthorizedAccessException("User identity not found or invalid");
-
-        return userId;
+        return await UserIdentityResolver.ResolveOrProvisionUserIdAsync(adapter, user);
     }
 
     public async Task<IdeaResponse> CreateIdeaAsync(CreateIdeaRequest request, ClaimsPrincipal user)

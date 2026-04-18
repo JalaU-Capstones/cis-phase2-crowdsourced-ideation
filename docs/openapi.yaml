@@ -112,6 +112,11 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_paging:
+              summary: Invalid paging/sorting/filtering parameter
+              value:
+                error: "size must be >= 1."
     
     Unauthorized:
       description: Missing, invalid, or expired JWT token
@@ -119,6 +124,11 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missing_or_invalid_token:
+              summary: Unauthorized (missing/invalid/expired token)
+              value:
+                error: "Unauthorized - Valid token required"
     
     Forbidden:
       description: Access denied due to ownership or business rules (e.g. closed topic)
@@ -126,6 +136,15 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            ownership:
+              summary: User is not the owner of the resource
+              value:
+                error: "You are not authorized to modify this topic."
+            closed_topic:
+              summary: Business rule violation (topic is closed)
+              value:
+                error: "This topic is closed. No modifications allowed."
 
     NotFound:
       description: Resource not found
@@ -133,6 +152,11 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            not_found:
+              summary: Resource does not exist
+              value:
+                error: "Resource not found."
 
     Conflict:
       description: Resource conflict (e.g. duplicate vote)
@@ -140,6 +164,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            duplicate_vote:
+              summary: Duplicate vote attempt
+              value:
+                message: "User has already voted on this idea."
+                errorCode: "DUPLICATE_VOTE"
 
   schemas:
     # ----- Error Responses -----
@@ -152,6 +182,10 @@ components:
         message:
           type: string
           example: "Error summary"
+        errorCode:
+          type: string
+          nullable: true
+          example: "DUPLICATE_VOTE"
       additionalProperties: true
 
     # ----- HATEOAS Link -----
@@ -491,6 +525,120 @@ components:
           example: "880e8400-e29b-41d4-a716-446655440000"
       additionalProperties: false
 
+    # ----- Statistics Models -----
+    TopTopicDto:
+      type: object
+      required: [topicId, topicTitle, status, ideasCount, votesCount]
+      properties:
+        topicId:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        topicTitle:
+          type: string
+          example: "Dashboard improvements"
+        status:
+          $ref: '#/components/schemas/TopicStatus'
+        ideasCount:
+          type: integer
+          example: 12
+        votesCount:
+          type: integer
+          example: 57
+        _links:
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+          example:
+            - href: "api/v1/topics/550e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "topic"
+            - href: "api/v1/statistics/topic/550e8400-e29b-41d4-a716-446655440000/summary"
+              method: "GET"
+              rel: "summary"
+
+    MostVotedIdeaDto:
+      type: object
+      required: [ideaId, ideaTitle, topicId, topicTitle, votesCount]
+      properties:
+        ideaId:
+          type: string
+          format: uuid
+          example: "660e8400-e29b-41d4-a716-446655440000"
+        ideaTitle:
+          type: string
+          example: "Implement dark mode"
+        topicId:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        topicTitle:
+          type: string
+          example: "Dashboard improvements"
+        votesCount:
+          type: integer
+          example: 42
+        _links:
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+          example:
+            - href: "api/v1/ideas/660e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "idea"
+            - href: "api/v1/topics/550e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "topic"
+
+    IdeaBriefDto:
+      type: object
+      required: [ideaId, ideaTitle, votesCount]
+      properties:
+        ideaId:
+          type: string
+          format: uuid
+          example: "660e8400-e29b-41d4-a716-446655440000"
+        ideaTitle:
+          type: string
+          example: "Implement dark mode"
+        votesCount:
+          type: integer
+          example: 42
+
+    TopicSummaryDto:
+      type: object
+      required: [topicId, topicTitle, status, ideasCount, votesCount]
+      properties:
+        topicId:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        topicTitle:
+          type: string
+          example: "Dashboard improvements"
+        status:
+          $ref: '#/components/schemas/TopicStatus'
+        ideasCount:
+          type: integer
+          example: 12
+        votesCount:
+          type: integer
+          example: 57
+        winningIdea:
+          $ref: '#/components/schemas/IdeaBriefDto'
+          nullable: true
+        mostVotedIdea:
+          $ref: '#/components/schemas/IdeaBriefDto'
+          nullable: true
+        _links:
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+          example:
+            - href: "api/v1/statistics/topic/550e8400-e29b-41d4-a716-446655440000/summary"
+              method: "GET"
+              rel: "self"
+            - href: "api/v1/topics/550e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "topic"
+
 # ========================
 # PATHS (ENDPOINTS)
 # ========================
@@ -498,29 +646,66 @@ paths:
   # ========================
   # VERSION 1 (MySQL)
   # ========================
+
+  # ----- TOPICS (V1) -----
   /api/v1/topics:
     get:
       tags: [Topics]
       summary: Get all topics (MySQL)
+      description: Public endpoint. Supports pagination, filtering, and sorting.
       parameters:
         - $ref: '#/components/parameters/PageParam'
         - $ref: '#/components/parameters/SizeParam'
         - name: status
           in: query
           schema: { type: string, enum: [OPEN, CLOSED] }
+          description: Filter by status
         - name: ownerId
           in: query
           schema: { type: string }
+          description: Filter by owner user ID
         - name: sortBy
           in: query
           schema: { type: string, enum: [createdAt, title, updatedAt], default: createdAt }
+          description: Field to sort by
         - $ref: '#/components/parameters/SortOrderParam'
       responses:
         '200':
-          description: OK
+          description: Paged list of topics
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PagedTopicResponse' }
+              examples:
+                ok:
+                  summary: Paged topics response
+                  value:
+                    data:
+                      - id: "550e8400-e29b-41d4-a716-446655440000"
+                        title: "Dashboard improvements"
+                        description: "Proposals to optimize the interface"
+                        status: "OPEN"
+                        ownerId: "550e8400-e29b-41d4-a716-446655440001"
+                        createdAt: "2026-03-30T10:00:00Z"
+                        updatedAt: "2026-03-30T15:30:00Z"
+                        winningIdea: null
+                        _links:
+                          - href: "api/v1/topics/550e8400-e29b-41d4-a716-446655440000"
+                            method: "GET"
+                            rel: "self"
+                          - href: "api/v1/ideas/topic/550e8400-e29b-41d4-a716-446655440000"
+                            method: "GET"
+                            rel: "ideas"
+                          - href: "api/v1/topics/550e8400-e29b-41d4-a716-446655440000"
+                            method: "PUT"
+                            rel: "update"
+                          - href: "api/v1/topics/550e8400-e29b-41d4-a716-446655440000"
+                            method: "DELETE"
+                            rel: "delete"
+                    currentPage: 0
+                    pageSize: 10
+                    totalItems: 1
+                    totalPages: 1
+        '400': { $ref: '#/components/responses/BadRequest' }
     post:
       tags: [Topics]
       summary: Create a topic (MySQL)
@@ -530,48 +715,442 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/CreateTopicRequest' }
+            examples:
+              create:
+                summary: Create topic request
+                value:
+                  title: "New mobile features"
+                  description: "Ideas for mobile usability improvements"
       responses:
         '201':
-          description: Created
+          description: Topic created
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TopicResponse' }
+              examples:
+                created:
+                  summary: Created topic
+                  value:
+                    id: "550e8400-e29b-41d4-a716-446655440000"
+                    title: "New mobile features"
+                    description: "Ideas for mobile usability improvements"
+                    status: "OPEN"
+                    ownerId: "550e8400-e29b-41d4-a716-446655440001"
+                    createdAt: "2026-03-30T10:00:00Z"
+                    updatedAt: "2026-03-30T10:00:00Z"
+                    winningIdea: null
+                    _links:
+                      - href: "api/v1/topics/550e8400-e29b-41d4-a716-446655440000"
+                        method: "GET"
+                        rel: "self"
+                      - href: "api/v1/ideas/topic/550e8400-e29b-41d4-a716-446655440000"
+                        method: "GET"
+                        rel: "ideas"
+                      - href: "api/v1/topics/550e8400-e29b-41d4-a716-446655440000"
+                        method: "PUT"
+                        rel: "update"
+                      - href: "api/v1/topics/550e8400-e29b-41d4-a716-446655440000"
+                        method: "DELETE"
+                        rel: "delete"
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /api/v1/topics/{id}:
     get:
       tags: [Topics]
       summary: Get topic by ID (MySQL)
-      parameters: [$ref: '#/components/parameters/TopicId']
+      parameters:
+        - $ref: '#/components/parameters/TopicId'
       responses:
         '200':
-          description: OK
+          description: Topic found
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TopicResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Topics]
+      summary: Update a topic (owner only, MySQL)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TopicId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTopicRequest' }
+            examples:
+              close_topic:
+                summary: Close a topic (cannot be reopened)
+                value:
+                  title: "New mobile features - Updated"
+                  description: "Focus on UX/UI"
+                  status: "CLOSED"
+      responses:
+        '200':
+          description: Topic updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopicResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Topics]
+      summary: Delete a topic (owner only, MySQL)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TopicId'
+      responses:
+        '200':
+          description: Topic deleted (cascade deletes ideas and votes)
+          content:
+            application/json:
+              examples:
+                deleted:
+                  summary: Deletion confirmation
+                  value:
+                    message: "Topic deleted. This action also deleted all related ideas and votes."
+                    topicId: "550e8400-e29b-41d4-a716-446655440000"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ----- IDEAS (V1) -----
+  /api/v1/ideas:
+    get:
+      tags: [Ideas]
+      summary: Get all ideas (MySQL)
+      description: Public endpoint. Supports pagination and sorting.
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/SizeParam'
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [updatedAt], default: updatedAt }
+          description: Field to sort by
+        - $ref: '#/components/parameters/SortOrderParam'
+      responses:
+        '200':
+          description: Paged list of ideas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagedIdeaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    post:
+      tags: [Ideas]
+      summary: Create an idea (authenticated, MySQL)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateIdeaRequest' }
+      responses:
+        '201':
+          description: Idea created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdeaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/ideas/{id}:
+    get:
+      tags: [Ideas]
+      summary: Get idea by ID (MySQL)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Idea ID
+          example: "660e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Idea found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdeaResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Ideas]
+      summary: Update an idea (owner only, MySQL)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Idea ID
+          example: "660e8400-e29b-41d4-a716-446655440000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateIdeaRequest' }
+      responses:
+        '200':
+          description: Idea updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdeaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Ideas]
+      summary: Delete an idea (owner only, MySQL)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Idea ID
+          example: "660e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Idea deleted (cascade deletes votes)
+          content:
+            application/json:
+              examples:
+                deleted:
+                  value:
+                    message: "Idea deleted. All votes related to this idea were deleted as well."
+                    ideaId: "660e8400-e29b-41d4-a716-446655440000"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/ideas/topic/{topicId}:
+    get:
+      tags: [Ideas]
+      summary: Get ideas by topic (MySQL)
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema: { type: string }
+          description: Topic ID (UUID string)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: List of ideas for the topic (empty array if none)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IdeaResponse' }
+
+  # ----- VOTES (V1) -----
+  /api/v1/votes:
+    get:
+      tags: [Votes]
+      summary: Get all votes (MySQL)
+      responses:
+        '200':
+          description: List of votes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VoteResponse' }
+    post:
+      tags: [Votes]
+      summary: Cast a vote (authenticated, MySQL)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CastVoteRequest' }
+      responses:
+        '201':
+          description: Vote recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoteResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/v1/votes/idea/{ideaId}:
+    get:
+      tags: [Votes]
+      summary: Get votes for an idea (MySQL)
+      parameters:
+        - name: ideaId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Idea ID
+          example: "660e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Votes for the idea
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VoteResponse' }
+
+  /api/v1/votes/{voteId}:
+    get:
+      tags: [Votes]
+      summary: Get vote by ID (MySQL)
+      parameters:
+        - $ref: '#/components/parameters/VoteId'
+      responses:
+        '200':
+          description: Vote found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoteResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Votes]
+      summary: Update a vote (owner only, MySQL)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/VoteId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateVoteRequest' }
+      responses:
+        '200':
+          description: Vote updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoteResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Votes]
+      summary: Delete a vote (owner only, MySQL)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/VoteId'
+      responses:
+        '200':
+          description: Vote deleted
+          content:
+            application/json:
+              examples:
+                deleted:
+                  value:
+                    message: "Vote deleted."
+                    voteId: "770e8400-e29b-41d4-a716-446655440000"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ----- STATISTICS (V1) -----
+  /api/v1/statistics/top-topics:
+    get:
+      tags: [Statistics]
+      summary: Get top topics (MySQL)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, default: 10 }
+          description: Number of items to return
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+          description: Offset for pagination
+      responses:
+        '200':
+          description: List of top topics
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TopTopicDto' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/statistics/most-voted-ideas:
+    get:
+      tags: [Statistics]
+      summary: Get most voted ideas (MySQL)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, default: 10 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: List of most voted ideas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MostVotedIdeaDto' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/statistics/topic/{topicId}/summary:
+    get:
+      tags: [Statistics]
+      summary: Get topic summary (MySQL)
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema: { type: string }
+          description: Topic ID (UUID string)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Topic summary statistics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopicSummaryDto' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   # ========================
   # VERSION 2 (MongoDB)
   # ========================
+
+  # ----- TOPICS (V2) -----
   /api/v2/topics:
     get:
       tags: [Topics]
       summary: Get all topics (MongoDB)
+      description: Public endpoint. Supports pagination, filtering, and sorting.
       parameters:
         - $ref: '#/components/parameters/PageParam'
         - $ref: '#/components/parameters/SizeParam'
         - name: status
           in: query
           schema: { type: string, enum: [OPEN, CLOSED] }
+          description: Filter by status
         - name: ownerId
           in: query
           schema: { type: string }
+          description: Filter by owner user ID
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [createdAt, title, updatedAt], default: createdAt }
+          description: Field to sort by
+        - $ref: '#/components/parameters/SortOrderParam'
       responses:
         '200':
-          description: OK
+          description: Paged list of topics
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PagedTopicResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
     post:
       tags: [Topics]
       summary: Create a topic (MongoDB)
@@ -583,41 +1162,89 @@ paths:
             schema: { $ref: '#/components/schemas/CreateTopicRequest' }
       responses:
         '201':
-          description: Created
+          description: Topic created
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TopicResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /api/v2/topics/{id}:
     get:
       tags: [Topics]
       summary: Get topic by ID (MongoDB)
-      parameters: [$ref: '#/components/parameters/TopicId']
+      parameters:
+        - $ref: '#/components/parameters/TopicId'
       responses:
         '200':
-          description: OK
+          description: Topic found
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TopicResponse' }
         '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Topics]
+      summary: Update a topic (owner only, MongoDB)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TopicId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTopicRequest' }
+      responses:
+        '200':
+          description: Topic updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopicResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Topics]
+      summary: Delete a topic (owner only, MongoDB)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/TopicId'
+      responses:
+        '200':
+          description: Topic deleted (cascade deletes ideas and votes)
+          content:
+            application/json:
+              examples:
+                deleted:
+                  value:
+                    message: "Topic deleted. This action also deleted all related ideas and votes."
+                    topicId: "550e8400-e29b-41d4-a716-446655440000"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
-  # ----- IDEAS (V1) -----
-  /api/v1/ideas:
+  # ----- IDEAS (V2) -----
+  /api/v2/ideas:
     get:
       tags: [Ideas]
-      summary: Get all ideas (V1)
+      summary: Get all ideas (MongoDB)
       parameters:
         - $ref: '#/components/parameters/PageParam'
         - $ref: '#/components/parameters/SizeParam'
+        - name: sortBy
+          in: query
+          schema: { type: string, enum: [updatedAt], default: updatedAt }
+        - $ref: '#/components/parameters/SortOrderParam'
       responses:
         '200':
-          description: OK
+          description: Paged list of ideas
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PagedIdeaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
     post:
       tags: [Ideas]
-      summary: Create an idea (V1)
+      summary: Create an idea (authenticated, MongoDB)
       security: [{ BearerAuth: [] }]
       requestBody:
         required: true
@@ -626,7 +1253,257 @@ paths:
             schema: { $ref: '#/components/schemas/CreateIdeaRequest' }
       responses:
         '201':
-          description: Created
+          description: Idea created
           content:
             application/json:
               schema: { $ref: '#/components/schemas/IdeaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v2/ideas/{id}:
+    get:
+      tags: [Ideas]
+      summary: Get idea by ID (MongoDB)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Idea found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdeaResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Ideas]
+      summary: Update an idea (owner only, MongoDB)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateIdeaRequest' }
+      responses:
+        '200':
+          description: Idea updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdeaResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Ideas]
+      summary: Delete an idea (owner only, MongoDB)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Idea deleted (cascade deletes votes)
+          content:
+            application/json:
+              examples:
+                deleted:
+                  value:
+                    message: "Idea deleted. All votes related to this idea were deleted as well."
+                    ideaId: "660e8400-e29b-41d4-a716-446655440000"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v2/ideas/topic/{topicId}:
+    get:
+      tags: [Ideas]
+      summary: Get ideas by topic (MongoDB)
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of ideas for the topic (empty array if none)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IdeaResponse' }
+
+  # ----- VOTES (V2) -----
+  /api/v2/votes:
+    get:
+      tags: [Votes]
+      summary: Get all votes (MongoDB)
+      responses:
+        '200':
+          description: List of votes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VoteResponse' }
+    post:
+      tags: [Votes]
+      summary: Cast a vote (authenticated, MongoDB)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CastVoteRequest' }
+      responses:
+        '201':
+          description: Vote recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoteResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/v2/votes/idea/{ideaId}:
+    get:
+      tags: [Votes]
+      summary: Get votes for an idea (MongoDB)
+      parameters:
+        - name: ideaId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Votes for the idea
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VoteResponse' }
+
+  /api/v2/votes/{voteId}:
+    get:
+      tags: [Votes]
+      summary: Get vote by ID (MongoDB)
+      parameters:
+        - $ref: '#/components/parameters/VoteId'
+      responses:
+        '200':
+          description: Vote found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoteResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Votes]
+      summary: Update a vote (owner only, MongoDB)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/VoteId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateVoteRequest' }
+      responses:
+        '200':
+          description: Vote updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoteResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Votes]
+      summary: Delete a vote (owner only, MongoDB)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/VoteId'
+      responses:
+        '200':
+          description: Vote deleted
+          content:
+            application/json:
+              examples:
+                deleted:
+                  value:
+                    message: "Vote deleted."
+                    voteId: "770e8400-e29b-41d4-a716-446655440000"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ----- STATISTICS (V2) -----
+  /api/v2/statistics/top-topics:
+    get:
+      tags: [Statistics]
+      summary: Get top topics (MongoDB)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, default: 10 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: List of top topics
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TopTopicDto' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v2/statistics/most-voted-ideas:
+    get:
+      tags: [Statistics]
+      summary: Get most voted ideas (MongoDB)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, default: 10 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: List of most voted ideas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MostVotedIdeaDto' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v2/statistics/topic/{topicId}/summary:
+    get:
+      tags: [Statistics]
+      summary: Get topic summary (MongoDB)
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Topic summary statistics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopicSummaryDto' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }

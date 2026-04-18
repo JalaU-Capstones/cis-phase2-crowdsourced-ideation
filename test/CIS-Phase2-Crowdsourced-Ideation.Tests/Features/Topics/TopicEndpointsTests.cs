@@ -52,7 +52,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().BeEmpty();
@@ -78,7 +83,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(1);
@@ -119,7 +129,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().HaveCount(1);
@@ -162,7 +177,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().HaveCount(1);
@@ -202,7 +222,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().HaveCount(1);
@@ -402,18 +427,23 @@ public class TopicEndpointsTests
     }
 
     [Fact]
-    public async Task CreateTopic_ReturnsUnauthorized_WhenUserNotFoundInDatabase()
+    public async Task CreateTopic_ProvisionsUser_WhenUserNotFoundInDatabase()
     {
         var db = CreateInMemoryDb();
         var request = new CreateTopicRequest("New Topic", "Some description");
-        var user = TestHelpers.CreateClaimsPrincipal("missing-user");
+        var login = "missing-user";
+        var user = TestHelpers.CreateClaimsPrincipal(login);
 
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
         var result = await TopicEndpoints.HandleCreateTopic(request, user, httpContext, "v1");
 
-        result.Result.Should().BeOfType<UnauthorizedHttpResult>();
+        var created = result.Result.Should().BeOfType<Created<TopicResponse>>().Subject;
+
+        var dbUser = await db.Users.SingleOrDefaultAsync(u => u.Login == login);
+        dbUser.Should().NotBeNull();
+        created.Value!.OwnerId.Should().Be(dbUser!.Id);
     }
 
     [Fact]
@@ -849,7 +879,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.CurrentPage.Should().Be(0);
@@ -875,7 +910,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: 1, size: 5, status: null, ownerId: null, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: 1, size: 5,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.CurrentPage.Should().Be(1);
@@ -893,7 +933,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: -1, size: 10, status: null, ownerId: null, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: -1, size: 10,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -906,7 +951,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: 0, size: 0, status: null, ownerId: null, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: 0, size: 0,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -919,7 +969,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: 0, size: -5, status: null, ownerId: null, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: 0, size: -5,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -939,7 +994,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: 99, size: 10, status: null, ownerId: null, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: 99, size: 10,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().BeEmpty();
@@ -969,7 +1029,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: "OPEN", ownerId: null, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: "OPEN", ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(1);
@@ -998,7 +1063,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: null, ownerId: ownerId, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: ownerId,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(1);
@@ -1020,7 +1090,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: "CLOSED", ownerId: null, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: "CLOSED", ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(0);
@@ -1035,7 +1110,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: "INVALID", ownerId: null, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: "INVALID", ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -1068,7 +1148,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: "OPEN", ownerId: ownerId, sortBy: null, order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: "OPEN", ownerId: ownerId,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(1);
@@ -1099,7 +1184,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: null, order: null,
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.First().Title.Should().Be("Newer");
@@ -1126,7 +1216,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, sortBy: "title", order: "asc");
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: "title", order: "asc",
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.First().Title.Should().Be("Apple");
@@ -1154,7 +1249,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, sortBy: "updatedAt", order: "asc");
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: "updatedAt", order: "asc",
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.First().Title.Should().Be("Updated Long Ago");
@@ -1168,7 +1268,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, sortBy: "invalid", order: null);
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: "invalid", order: null,
+            version: "v1");
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -1181,7 +1286,12 @@ public class TopicEndpointsTests
         var adapter = new TestRepositoryAdapter(db);
         var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, sortBy: null, order: "invalid");
+        var result = await TopicEndpoints.HandleGetAllTopics(
+            httpContext,
+            page: null, size: null,
+            status: null, ownerId: null,
+            sortBy: null, order: "invalid",
+            version: "v1");
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -1216,7 +1326,11 @@ public class TopicEndpointsTests
         var httpContext = CreateMockHttpContext(adapter);
 
         var result = await TopicEndpoints.HandleGetAllTopics(
-            httpContext, "v1", page: 0, size: 2, status: "OPEN", ownerId: ownerId, sortBy: "title", order: "asc");
+            httpContext,
+            page: 0, size: 2,
+            status: "OPEN", ownerId: ownerId,
+            sortBy: "title", order: "asc",
+            version: "v1");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(3);   // 3 OPEN after filter

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Statistics;
@@ -7,9 +8,10 @@ public sealed record TopTopicDto(
     string TopicTitle,
     string Status,
     int IdeasCount,
-    int VotesCount
+	int VotesCount
 ) {
-    public IReadOnlyList<LinkDto>? Links { get; init; }
+	[JsonPropertyName("_links")]
+	public IReadOnlyList<LinkDto>? Links { get; init; }
 }
 
 public sealed record MostVotedIdeaDto(
@@ -17,9 +19,10 @@ public sealed record MostVotedIdeaDto(
     string IdeaTitle,
     string TopicId,
     string TopicTitle,
-    int VotesCount
+	int VotesCount
 ) {
-    public IReadOnlyList<LinkDto>? Links { get; init; }
+	[JsonPropertyName("_links")]
+	public IReadOnlyList<LinkDto>? Links { get; init; }
 }
 
 public sealed record IdeaBriefDto(
@@ -34,10 +37,11 @@ public sealed record TopicSummaryDto(
     string Status,
     int IdeasCount,
     int VotesCount,
-    IdeaBriefDto? WinningIdea,
-    IdeaBriefDto? MostVotedIdea
+	IdeaBriefDto? WinningIdea,
+	IdeaBriefDto? MostVotedIdea
 ) {
-    public IReadOnlyList<LinkDto>? Links { get; init; }
+	[JsonPropertyName("_links")]
+	public IReadOnlyList<LinkDto>? Links { get; init; }
 }
 
 public sealed record ErrorResponse(string Message);

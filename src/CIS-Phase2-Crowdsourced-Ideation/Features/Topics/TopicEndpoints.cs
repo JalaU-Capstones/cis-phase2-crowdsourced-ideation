@@ -10,20 +10,13 @@ using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 
-/// <summary>
-/// Defines endpoints for managing topics.
-/// </summary>
 public static class TopicEndpoints
 {
-    /// <summary>
-    /// Maps topic endpoints to the routing system.
-    /// </summary>
     public static IEndpointRouteBuilder MapTopicEndpoints(this IEndpointRouteBuilder endpoints, string version = "v1")
     {
-        var group = endpoints.MapGroup($"/{version}/topics")
+        var group = endpoints.MapGroup($"/api/{version}/topics")
             .WithTags("Topics");
 
-        // Use version-specific adapter
         group.AddEndpointFilter(async (context, next) =>
         {
             var adapter = version == "v2" 
@@ -31,35 +24,36 @@ public static class TopicEndpoints
                 : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
             
             context.HttpContext.Items["RepositoryAdapter"] = adapter;
-            context.HttpContext.Items["ApiVersion"] = version;
             return await next(context);
         });
 
-        // Public read access
-        group.MapGet("/", HandleGetAllTopics)
+        group.MapGet("/", (HttpContext http, int? page, int? size, string? status, string? ownerId, string? sortBy, string? order) =>
+                HandleGetAllTopics(http, page, size, status, ownerId, sortBy, order, version))
             .WithName($"GetAllTopics_{version}")
             .WithSummary($"Get all topics ({version})")
             .Produces<PagedResponse<TopicResponse>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest);
 
-        group.MapGet("/{id}", HandleGetTopicById)
+        group.MapGet("/{id}", (string id, HttpContext http) =>
+                HandleGetTopicById(id, http, version))
             .WithName($"GetTopicById_{version}")
             .WithSummary($"Get topic by id ({version})")
             .Produces<TopicResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
-        // Protected write access
         var protectedGroup = group.MapGroup("/")
             .RequireAuthorization();
 
-        protectedGroup.MapPost("/", HandleCreateTopic)
+        protectedGroup.MapPost("/", (CreateTopicRequest request, ClaimsPrincipal user, HttpContext http) =>
+                HandleCreateTopic(request, user, http, version))
             .WithName($"CreateTopic_{version}")
             .WithSummary($"Create a topic ({version})")
             .Produces<TopicResponse>(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status400BadRequest);
 
-        protectedGroup.MapPut("/{id}", HandleUpdateTopic)
+        protectedGroup.MapPut("/{id}", (string id, UpdateTopicRequest request, ClaimsPrincipal user, HttpContext http) =>
+                HandleUpdateTopic(id, request, user, http, version))
             .WithName($"UpdateTopic_{version}")
             .WithSummary($"Update a topic ({version})")
             .Produces<TopicResponse>(StatusCodes.Status200OK)
@@ -68,7 +62,8 @@ public static class TopicEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status400BadRequest);
 
-        protectedGroup.MapDelete("/{id}", HandleDeleteTopic)
+        protectedGroup.MapDelete("/{id}", (string id, ClaimsPrincipal user, HttpContext http) =>
+                HandleDeleteTopic(id, user, http, version))
             .WithName($"DeleteTopic_{version}")
             .WithSummary($"Delete a topic ({version})")
             .Produces(StatusCodes.Status200OK)
@@ -79,10 +74,9 @@ public static class TopicEndpoints
         return endpoints;
     }
 
-    private static ITopicService GetService(HttpContext http)
+    private static ITopicService GetService(HttpContext http, string version)
     {
         var adapter = (IRepositoryAdapter)http.Items["RepositoryAdapter"]!;
-        var version = (string)http.Items["ApiVersion"]!;
         return new TopicService(adapter, version);
     }
 
@@ -90,11 +84,12 @@ public static class TopicEndpoints
         HttpContext http,
         [FromQuery] int? page, [FromQuery] int? size,
         [FromQuery] string? status, [FromQuery] string? ownerId,
-        [FromQuery] string? sortBy, [FromQuery] string? order)
+        [FromQuery] string? sortBy, [FromQuery] string? order,
+        string version)
     {
         try
         {
-            var service = GetService(http);
+            var service = GetService(http, version);
             var response = await service.GetAllTopicsAsync(page, size, status, ownerId, sortBy, order);
             return TypedResults.Ok(response);
         }
@@ -105,9 +100,9 @@ public static class TopicEndpoints
     }
 
     public static async Task<Results<Ok<TopicResponse>, NotFound>> HandleGetTopicById(
-        string id, HttpContext http)
+        string id, HttpContext http, string version)
     {
-        var service = GetService(http);
+        var service = GetService(http, version);
         var topic = await service.GetTopicByIdAsync(id);
         if (topic is null)
             return TypedResults.NotFound();
@@ -118,13 +113,13 @@ public static class TopicEndpoints
     public static async Task<Results<Created<TopicResponse>, BadRequest<object>, UnauthorizedHttpResult>> HandleCreateTopic(
         CreateTopicRequest request,
         ClaimsPrincipal user,
-        HttpContext http)
+        HttpContext http,
+        string version)
     {
         try
         {
-            var service = GetService(http);
+            var service = GetService(http, version);
             var topic = await service.CreateTopicAsync(request, user);
-            var version = (string)http.Items["ApiVersion"]!;
             return TypedResults.Created($"/api/{version}/topics/{topic.Id}", topic);
         }
         catch (ArgumentException ex)
@@ -141,11 +136,12 @@ public static class TopicEndpoints
         string id,
         UpdateTopicRequest request,
         ClaimsPrincipal user,
-        HttpContext http)
+        HttpContext http,
+        string version)
     {
         try
         {
-            var service = GetService(http);
+            var service = GetService(http, version);
             var topic = await service.UpdateTopicAsync(id, request, user);
             if (topic == null) return TypedResults.NotFound();
 
@@ -169,11 +165,12 @@ public static class TopicEndpoints
     public static async Task<Results<Ok<object>, NotFound, ForbidHttpResult>> HandleDeleteTopic(
         string id,
         ClaimsPrincipal user,
-        HttpContext http)
+        HttpContext http,
+        string version)
     {
         try
         {
-            var service = GetService(http);
+            var service = GetService(http, version);
             var success = await service.DeleteTopicAsync(id, user);
             if (!success) return TypedResults.NotFound();
 

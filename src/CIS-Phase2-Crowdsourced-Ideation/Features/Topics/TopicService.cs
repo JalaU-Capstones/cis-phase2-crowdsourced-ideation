@@ -22,20 +22,7 @@ public class TopicService(IRepositoryAdapter adapter, string version = "v1") : I
 
     private async Task<string> ResolveUserIdAsync(ClaimsPrincipal user)
     {
-        var raw = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(raw))
-            throw new UnauthorizedAccessException("User identity not found or invalid");
-
-        // Tests and some JWT setups provide the user id directly as a GUID.
-        if (Guid.TryParse(raw, out var userId))
-            return userId.ToString();
-
-        // Phase 1 integration typically provides login/subject; map to DB user record to get the GUID id.
-        var dbUser = await adapter.Users.GetByLoginAsync(raw);
-        if (dbUser == null || !Guid.TryParse(dbUser.Id, out userId))
-            throw new UnauthorizedAccessException("User identity not found or invalid");
-
-        return userId.ToString();
+        return (await UserIdentityResolver.ResolveOrProvisionUserIdAsync(adapter, user)).ToString();
     }
 
     public async Task<PagedResponse<TopicResponse>> GetAllTopicsAsync(int? page, int? size, string? status, string? ownerId, string? sortBy, string? order)
