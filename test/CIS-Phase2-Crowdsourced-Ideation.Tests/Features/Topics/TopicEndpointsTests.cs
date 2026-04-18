@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using CIS.Phase2.CrowdsourcedIdeation.Features;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
 using Xunit;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Topics;
@@ -36,15 +37,22 @@ public class TopicEndpointsTests
         return user;
     }
 
+    private static HttpContext CreateMockHttpContext(IRepositoryAdapter adapter)
+    {
+        var context = new DefaultHttpContext();
+        context.Items["RepositoryAdapter"] = adapter;
+        return context;
+    }
+
     // GET /topics
    [Fact]
     public async Task GetAllTopics_ReturnsOk_WithEmptyList()
     {
         var db = CreateInMemoryDb();
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().BeEmpty();
@@ -68,9 +76,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(1);
@@ -109,9 +117,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().HaveCount(1);
@@ -152,9 +160,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().HaveCount(1);
@@ -192,9 +200,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().HaveCount(1);
@@ -219,9 +227,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetTopicById(id, service);
+        var result = await TopicEndpoints.HandleGetTopicById(id, httpContext, "v1");
 
         var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
         ok.Value!.Id.Should().Be(id);
@@ -259,9 +267,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetTopicById(id, service);
+        var result = await TopicEndpoints.HandleGetTopicById(id, httpContext, "v1");
 
         var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
         ok.Value!.WinningIdea.Should().NotBeNull();
@@ -299,9 +307,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetTopicById(id, service);
+        var result = await TopicEndpoints.HandleGetTopicById(id, httpContext, "v1");
         var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
         ok.Value!.WinningIdea.Should().BeNull();
     }
@@ -337,9 +345,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetTopicById(id, service);
+        var result = await TopicEndpoints.HandleGetTopicById(id, httpContext, "v1");
         var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
         ok.Value!.WinningIdea.Should().BeNull();
     }
@@ -350,9 +358,9 @@ public class TopicEndpointsTests
         var db = CreateInMemoryDb();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetTopicById(Guid.NewGuid().ToString(), service);
+        var result = await TopicEndpoints.HandleGetTopicById(Guid.NewGuid().ToString(), httpContext, "v1");
 
         result.Result.Should().BeOfType<NotFound>();
     }
@@ -368,8 +376,8 @@ public class TopicEndpointsTests
         var request = new CreateTopicRequest("New Topic", "Some description");
         var user    = TestHelpers.CreateClaimsPrincipal(login);
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleCreateTopic(request, user, service);
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, httpContext, "v1");
 
         var created = result.Result.Should().BeOfType<Created<TopicResponse>>().Subject;
         created.Value!.Title.Should().Be("New Topic");
@@ -386,9 +394,9 @@ public class TopicEndpointsTests
         var user = new ClaimsPrincipal(new ClaimsIdentity()); // no sub/NameIdentifier
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleCreateTopic(request, user, service);
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<UnauthorizedHttpResult>();
     }
@@ -401,9 +409,9 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal("missing-user");
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleCreateTopic(request, user, service);
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<UnauthorizedHttpResult>();
     }
@@ -418,9 +426,9 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal(login);
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleCreateTopic(request, user, service);
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
@@ -435,9 +443,9 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal(login);
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleCreateTopic(request, user, service);
+        var result = await TopicEndpoints.HandleCreateTopic(request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
@@ -465,8 +473,8 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("New Title", "New Desc", "CLOSED");
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, service, new DefaultHttpContext());
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, httpContext, "v1");
 
         var ok = result.Result.Should().BeOfType<Ok<TopicResponse>>().Subject;
         ok.Value!.Title.Should().Be("New Title");
@@ -494,8 +502,8 @@ public class TopicEndpointsTests
         var user = new ClaimsPrincipal(new ClaimsIdentity()); // no sub/NameIdentifier
         var request = new UpdateTopicRequest("New Title", "New Desc", "OPEN");
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, service, new DefaultHttpContext());
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<ForbidHttpResult>();
     }
@@ -520,8 +528,8 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal("missing-user");
         var request = new UpdateTopicRequest("New Title", "New Desc", "OPEN");
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, service, new DefaultHttpContext());
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<ForbidHttpResult>();
     }
@@ -550,8 +558,8 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal(otherLogin);
         var request = new UpdateTopicRequest("New Title", "New Desc", "CLOSED");
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, service, new DefaultHttpContext());
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<ForbidHttpResult>();
     }
@@ -566,9 +574,9 @@ public class TopicEndpointsTests
         var request = new UpdateTopicRequest("Title", null, "OPEN");
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleUpdateTopic(Guid.NewGuid().ToString(), request, user, service, new DefaultHttpContext());
+        var result = await TopicEndpoints.HandleUpdateTopic(Guid.NewGuid().ToString(), request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<NotFound>();
     }
@@ -594,8 +602,8 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("", null, "OPEN");
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, service, new DefaultHttpContext());
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
@@ -621,8 +629,8 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("Title", null, "INVALID");
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, service, new DefaultHttpContext());
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
@@ -649,8 +657,8 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal(login);
         var request = new UpdateTopicRequest("New Title", "New Desc", "OPEN");
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, service, new DefaultHttpContext());
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleUpdateTopic(id, request, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<BadRequest<object>>();
     }
@@ -677,8 +685,8 @@ public class TopicEndpointsTests
 
         var user = TestHelpers.CreateClaimsPrincipal(login);
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleDeleteTopic(id, user, service);
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleDeleteTopic(id, user, httpContext, "v1");
 
         var ok = result.Result.Should().BeOfType<Ok<object>>().Subject;
         ok.Value.Should().NotBeNull();
@@ -730,8 +738,8 @@ public class TopicEndpointsTests
 
         var user = TestHelpers.CreateClaimsPrincipal(login);
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleDeleteTopic(topicId, user, service);
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleDeleteTopic(topicId, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<Ok<object>>();
         (await db.Topics.FindAsync(topicId)).Should().BeNull();
@@ -757,8 +765,8 @@ public class TopicEndpointsTests
 
         var user = new ClaimsPrincipal(new ClaimsIdentity());
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleDeleteTopic(topicId, user, service);
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleDeleteTopic(topicId, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<ForbidHttpResult>();
     }
@@ -781,8 +789,8 @@ public class TopicEndpointsTests
 
         var user = TestHelpers.CreateClaimsPrincipal("missing-user");
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleDeleteTopic(topicId, user, service);
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleDeleteTopic(topicId, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<ForbidHttpResult>();
     }
@@ -810,8 +818,8 @@ public class TopicEndpointsTests
 
         var user = TestHelpers.CreateClaimsPrincipal(otherLogin);
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
-        var result = await TopicEndpoints.HandleDeleteTopic(id, user, service);
+        var httpContext = CreateMockHttpContext(adapter);
+        var result = await TopicEndpoints.HandleDeleteTopic(id, user, httpContext, "v1");
 
         result.Result.Should().BeOfType<ForbidHttpResult>();
     }
@@ -825,9 +833,9 @@ public class TopicEndpointsTests
         var user = TestHelpers.CreateClaimsPrincipal(login);
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleDeleteTopic(Guid.NewGuid().ToString(), user, service);
+        var result = await TopicEndpoints.HandleDeleteTopic(Guid.NewGuid().ToString(), user, httpContext, "v1");
 
         result.Result.Should().BeOfType<NotFound>();
     }
@@ -839,9 +847,9 @@ public class TopicEndpointsTests
         var db = CreateInMemoryDb();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.CurrentPage.Should().Be(0);
@@ -865,9 +873,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, page: 1, size: 5, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: 1, size: 5, status: null, ownerId: null, sortBy: null, order: null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.CurrentPage.Should().Be(1);
@@ -883,9 +891,9 @@ public class TopicEndpointsTests
         var db = CreateInMemoryDb();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, page: -1, size: 10, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: -1, size: 10, status: null, ownerId: null, sortBy: null, order: null);
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -896,9 +904,9 @@ public class TopicEndpointsTests
         var db = CreateInMemoryDb();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, page: 0, size: 0, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: 0, size: 0, status: null, ownerId: null, sortBy: null, order: null);
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -909,9 +917,9 @@ public class TopicEndpointsTests
         var db = CreateInMemoryDb();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, page: 0, size: -5, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: 0, size: -5, status: null, ownerId: null, sortBy: null, order: null);
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -929,9 +937,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, page: 99, size: 10, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", page: 99, size: 10, status: null, ownerId: null, sortBy: null, order: null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.Should().BeEmpty();
@@ -959,9 +967,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, status: "OPEN", null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: "OPEN", ownerId: null, sortBy: null, order: null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(1);
@@ -988,9 +996,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, ownerId: ownerId, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: null, ownerId: ownerId, sortBy: null, order: null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(1);
@@ -1010,9 +1018,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, status: "CLOSED", null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: "CLOSED", ownerId: null, sortBy: null, order: null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(0);
@@ -1025,9 +1033,9 @@ public class TopicEndpointsTests
         var db = CreateInMemoryDb();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, status: "INVALID", null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: "INVALID", ownerId: null, sortBy: null, order: null);
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -1058,9 +1066,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, status: "OPEN", ownerId: ownerId, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, status: "OPEN", ownerId: ownerId, sortBy: null, order: null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(1);
@@ -1089,9 +1097,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, null, null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, null, null);
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.First().Title.Should().Be("Newer");
@@ -1116,9 +1124,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, sortBy: "title", order: "asc");
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, sortBy: "title", order: "asc");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.First().Title.Should().Be("Apple");
@@ -1144,9 +1152,9 @@ public class TopicEndpointsTests
         await db.SaveChangesAsync();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, sortBy: "updatedAt", order: "asc");
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, sortBy: "updatedAt", order: "asc");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.Data.First().Title.Should().Be("Updated Long Ago");
@@ -1158,9 +1166,9 @@ public class TopicEndpointsTests
         var db = CreateInMemoryDb();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, sortBy: "invalid", null);
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, sortBy: "invalid", order: null);
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -1171,9 +1179,9 @@ public class TopicEndpointsTests
         var db = CreateInMemoryDb();
 
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
-        var result = await TopicEndpoints.HandleGetAllTopics(service, null, null, null, null, null, order: "invalid");
+        var result = await TopicEndpoints.HandleGetAllTopics(httpContext, "v1", null, null, null, null, sortBy: null, order: "invalid");
 
         result.Should().BeOfType<BadRequest<object>>();
     }
@@ -1205,10 +1213,10 @@ public class TopicEndpointsTests
 
         // Filter: OPEN + ownerId | Sort: title asc | Page: 0, size: 2
         var adapter = new TestRepositoryAdapter(db);
-        var service = new TopicService(adapter);
+        var httpContext = CreateMockHttpContext(adapter);
 
         var result = await TopicEndpoints.HandleGetAllTopics(
-            service, page: 0, size: 2, status: "OPEN", ownerId: ownerId, sortBy: "title", order: "asc");
+            httpContext, "v1", page: 0, size: 2, status: "OPEN", ownerId: ownerId, sortBy: "title", order: "asc");
 
         var ok = result.Should().BeOfType<Ok<PagedResponse<TopicResponse>>>().Subject;
         ok.Value!.TotalItems.Should().Be(3);   // 3 OPEN after filter
@@ -1217,4 +1225,3 @@ public class TopicEndpointsTests
         ok.Value.Data.First().Title.Should().Be("Topic A"); // sorted asc
     }
 }
-
