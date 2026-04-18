@@ -13,7 +13,7 @@ public static class IdeaEndpoints
 {
     public static void MapIdeaEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/ideas")
+        var group = app.MapGroup("/api/v1/ideas")
             .WithTags("Ideas");
 
         group.MapGet("/", GetAllIdeas)
@@ -135,7 +135,7 @@ public static class IdeaEndpoints
         try 
         {
             var result = await service.CreateIdeaAsync(request, user);
-            return TypedResults.Created($"/api/ideas/{result.Id}", result);
+            return TypedResults.Created($"/api/v1/ideas/{result.Id}", result);
         }
         catch (ArgumentException ex)
         {

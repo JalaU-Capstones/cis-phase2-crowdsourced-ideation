@@ -9,6 +9,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddFeatures(this IServiceCollection services)
     {
+        services.AddScoped<ITopicService, TopicService>();
         services.AddScoped<IIdeaService, IdeaService>();
         services.AddScoped<IVoteService, VoteService>();
         services.AddScoped<IStatisticsService, StatisticsService>();

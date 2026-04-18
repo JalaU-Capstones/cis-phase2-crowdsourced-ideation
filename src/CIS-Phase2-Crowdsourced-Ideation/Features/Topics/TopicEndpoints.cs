@@ -28,30 +28,26 @@ public static class TopicEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapTopicEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/topics")
+        var group = endpoints.MapGroup("/api/v1/topics")
             .WithTags("Topics");
 
         // Public read access
-group.MapGet("/", (AppDbContext db,
-    [FromQuery] int? page, [FromQuery] int? size,
-    [FromQuery] string? status, [FromQuery] string? ownerId,
-    [FromQuery] string? sortBy, [FromQuery] string? order) =>
-    HandleGetAllTopics(db, page, size, status, ownerId, sortBy, order))
-    .WithName("GetAllTopics")
-    .WithSummary("Get all topics (public)")
-    .WithDescription("Public endpoint. Returns paginated topics with filtering and sorting support.")
-    .Produces<PagedResponse<TopicResponse>>(StatusCodes.Status200OK)
-    .Produces(StatusCodes.Status400BadRequest);
+        group.MapGet("/", HandleGetAllTopics)
+            .WithName("GetAllTopics")
+            .WithSummary("Get all topics (public)")
+            .WithDescription("Public endpoint. Returns paginated topics with filtering and sorting support.")
+            .Produces<PagedResponse<TopicResponse>>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status400BadRequest);
 
-group.MapGet("/{id}", HandleGetTopicById)
-    .WithName("GetTopicById")
-    .WithSummary("Get topic by id (public)")
-    .WithDescription("""
-        Public endpoint. Returns a topic by its id.
-        When a topic is CLOSED, the response includes the winning idea (the idea with IsWinning=true), if present.
-        """)
-    .Produces<TopicResponse>(StatusCodes.Status200OK)
-    .Produces(StatusCodes.Status404NotFound);
+        group.MapGet("/{id}", HandleGetTopicById)
+            .WithName("GetTopicById")
+            .WithSummary("Get topic by id (public)")
+            .WithDescription("""
+                Public endpoint. Returns a topic by its id.
+                When a topic is CLOSED, the response includes the winning idea (the idea with IsWinning=true), if present.
+                """)
+            .Produces<TopicResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
 
         // Protected write access
         var protectedGroup = group.MapGroup("/")
@@ -65,7 +61,7 @@ group.MapGet("/{id}", HandleGetTopicById)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status400BadRequest);
 
-        protectedGroup.MapPut("/{id}", UpdateTopicWithInfoHeader)
+        protectedGroup.MapPut("/{id}", HandleUpdateTopic)
             .WithName("UpdateTopic")
             .WithSummary("Update a topic (owner only)")
             .WithDescription("""
@@ -94,127 +90,32 @@ group.MapGet("/{id}", HandleGetTopicById)
     /// Retrieves all topics.
     /// </summary>
    public static async Task<IResult> HandleGetAllTopics(
-    AppDbContext db,
-    int? page, int? size,
-    string? status, string? ownerId,
-    string? sortBy, string? order)
-{
-    // 1. Validar paginación
-    var currentPage = page ?? 0;
-    var pageSize    = size ?? 10;
-
-    if (currentPage < 0)
-        return TypedResults.BadRequest<object>(new { error = "page must be >= 0." });
-    if (pageSize <= 0)
-        return TypedResults.BadRequest<object>(new { error = "size must be >= 1." });
-
-    // 2. Validar sorting
-    var sortField = sortBy ?? "createdAt";
-    var sortOrder = order  ?? "desc";
-
-    if (!ValidSortFields.Contains(sortField))
-    return TypedResults.BadRequest<object>(new { error = $"sortBy must be one of: {string.Join(", ", ValidSortFields)}." });
-    if (!ValidOrders.Contains(sortOrder))
-    return TypedResults.BadRequest<object>(new { error = $"order must be 'asc' or 'desc'." });
-
-    // 3. Validar filtering
-    TopicStatus? parsedStatus = null;
-    if (status is not null)
+    ITopicService service,
+    [FromQuery] int? page, [FromQuery] int? size,
+    [FromQuery] string? status, [FromQuery] string? ownerId,
+    [FromQuery] string? sortBy, [FromQuery] string? order)
     {
-        if (!Enum.TryParse<TopicStatus>(status, ignoreCase: true, out var s))
-            return TypedResults.BadRequest<object>(new { error = "status must be 'OPEN' or 'CLOSED'." });
-        parsedStatus = s;
+        try
+        {
+            var response = await service.GetAllTopicsAsync(page, size, status, ownerId, sortBy, order);
+            return TypedResults.Ok(response);
+        }
+        catch (ArgumentException ex)
+        {
+            return TypedResults.BadRequest<object>(new { error = ex.Message });
+        }
     }
-
-    // 4. Query base
-    var query = db.Topics.AsNoTracking().AsQueryable();
-
-    // 5. Aplicar filtros
-    if (parsedStatus is not null)
-        query = query.Where(t => t.Status == parsedStatus.Value);
-    if (!string.IsNullOrWhiteSpace(ownerId))
-        query = query.Where(t => t.OwnerId == ownerId);
-
-    // 6. Aplicar sorting
-    query = (sortField, sortOrder) switch
-    {
-        ("title",     "asc")  => query.OrderBy(t => t.Title),
-        ("title",     "desc") => query.OrderByDescending(t => t.Title),
-        ("updatedAt", "asc")  => query.OrderBy(t => t.UpdatedAt),
-        ("updatedAt", "desc") => query.OrderByDescending(t => t.UpdatedAt),
-        ("createdAt", "asc")  => query.OrderBy(t => t.CreatedAt),
-        _                     => query.OrderByDescending(t => t.CreatedAt),
-    };
-
-    // 7. Contar total ANTES de paginar
-    var totalItems = await query.CountAsync();
-    var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize);
-
-    // 8. Aplicar paginación
-    var topics = await query
-        .Skip(currentPage * pageSize)
-        .Take(pageSize)
-        .ToListAsync();
-
-    // 9. Winning idea para topics CLOSED (lógica de main)
-    var closedTopicIds = topics
-        .Where(t => t.Status == TopicStatus.CLOSED)
-        .Select(t => t.Id)
-        .ToList();
-
-    Dictionary<string, WinningIdeaResponse?> winnersByTopicId = new();
-    if (closedTopicIds.Count > 0)
-    {
-        var ideasForClosedTopics = await db.Ideas
-            .AsNoTracking()
-            .Where(i => closedTopicIds.Contains(i.TopicId))
-            .ToListAsync();
-
-        winnersByTopicId = ideasForClosedTopics
-            .Where(i => i.IsWinning)
-            .GroupBy(i => i.TopicId)
-            .ToDictionary(
-                g => g.Key,
-                g => (WinningIdeaResponse?)MapToWinningIdeaResponse(g.First()));
-    }
-
-    var response = new PagedResponse<TopicResponse>(
-        Data:        topics.Select(t =>
-            ToResponse(t, t.Status == TopicStatus.CLOSED
-                ? winnersByTopicId.GetValueOrDefault(t.Id)
-                : null)),
-        CurrentPage: currentPage,
-        PageSize:    pageSize,
-        TotalItems:  totalItems,
-        TotalPages:  totalPages
-    );
-
-    return TypedResults.Ok(response);
-}
 
     /// <summary>
     /// Retrieves a topic by its unique identifier.
     /// </summary>
-    public static async Task<Results<Ok<TopicResponse>, NotFound>> HandleGetTopicById(string id, AppDbContext db)
+    public static async Task<Results<Ok<TopicResponse>, NotFound>> HandleGetTopicById(string id, ITopicService service)
     {
-        var topic = await db.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id);
+        var topic = await service.GetTopicByIdAsync(id);
         if (topic is null)
             return TypedResults.NotFound();
 
-        WinningIdeaResponse? winner = null;
-        if (topic.Status == TopicStatus.CLOSED)
-        {
-            var ideas = await db.Ideas
-                .AsNoTracking()
-                .Where(i => i.TopicId == id)
-                .ToListAsync();
-
-            var winningIdea = ideas.FirstOrDefault(i => i.IsWinning);
-            if (winningIdea is not null)
-                winner = MapToWinningIdeaResponse(winningIdea);
-        }
-
-        return TypedResults.Ok(ToResponse(topic, winner));
+        return TypedResults.Ok(topic);
     }
 
     /// <summary>
@@ -223,38 +124,21 @@ group.MapGet("/{id}", HandleGetTopicById)
     public static async Task<Results<Created<TopicResponse>, BadRequest<object>, UnauthorizedHttpResult>> HandleCreateTopic(
         CreateTopicRequest request,
         ClaimsPrincipal user,
-        AppDbContext db)
+        ITopicService service)
     {
-        // 1. Authentication (Checked by middleware [RequireAuthorization])
-        
-        // 2. Authorization (Owner validation - not applicable for create)
-        var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(login))
-            return TypedResults.Unauthorized();
-
-        var dbUser = await db.Users.FirstOrDefaultAsync(u => u.Login == login);
-        if (dbUser == null)
-            return TypedResults.Unauthorized();
-
-        // 3. Input validation
-        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
-            return TypedResults.BadRequest<object>(new { error = TitleLengthErrorMessage });
-
-        var topic = new Topic
+        try
         {
-            Id          = Guid.NewGuid().ToString(),
-            Title       = request.Title.Trim(),
-            Description = request.Description?.Trim(),
-            Status      = TopicStatus.OPEN,
-            OwnerId     = dbUser.Id,
-            CreatedAt   = DateTime.UtcNow,
-            UpdatedAt   = DateTime.UtcNow
-        };
-
-        db.Topics.Add(topic);
-        await db.SaveChangesAsync();
-
-        return TypedResults.Created($"/api/topics/{topic.Id}", ToResponse(topic));
+            var topic = await service.CreateTopicAsync(request, user);
+            return TypedResults.Created($"/api/v1/topics/{topic.Id}", topic);
+        }
+        catch (ArgumentException ex)
+        {
+            return TypedResults.BadRequest<object>(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return TypedResults.Unauthorized();
+        }
     }
 
     /// <summary>
@@ -264,49 +148,29 @@ group.MapGet("/{id}", HandleGetTopicById)
         string id,
         UpdateTopicRequest request,
         ClaimsPrincipal user,
-        AppDbContext db)
+        ITopicService service,
+        HttpContext http)
     {
-        // 1. Authentication (Checked by middleware [RequireAuthorization])
-        
-        // Find topic first to check ownership
-        var topic = await db.Topics.FindAsync(id);
-        if (topic is null) return TypedResults.NotFound();
-
-        // 2. Authorization (Ownership)
-        var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(login))
-            return TypedResults.Forbid();
-
-        var dbUser = await db.Users.FirstOrDefaultAsync(u => u.Login == login);
-        if (dbUser == null || topic.OwnerId != dbUser.Id)
-            return TypedResults.Forbid();
-
-        // 3. Input validation
-        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 200)
-            return TypedResults.BadRequest<object>(new { error = TitleLengthErrorMessage });
-
-        if (!Enum.TryParse<TopicStatus>(request.Status, ignoreCase: true, out var parsedStatus))
-            return TypedResults.BadRequest<object>(new { error = StatusErrorMessage });
-
-        // Business rule: once CLOSED, a topic cannot be reopened.
-        if (topic.Status == TopicStatus.CLOSED && parsedStatus == TopicStatus.OPEN)
-            return TypedResults.BadRequest<object>(new { error = TopicCannotBeReopenedMessage });
-
-        var wasOpen = topic.Status == TopicStatus.OPEN;
-
-        topic.Title = request.Title.Trim();
-        topic.Description = request.Description?.Trim();
-        topic.Status = parsedStatus;
-        topic.UpdatedAt = DateTime.UtcNow;
-
-        WinningIdeaResponse? winningIdea = null;
-        if (wasOpen && parsedStatus == TopicStatus.CLOSED)
+        try
         {
-            winningIdea = await MarkWinningIdeaAsync(db, topicId: topic.Id);
-        }
+            var topic = await service.UpdateTopicAsync(id, request, user);
+            if (topic == null) return TypedResults.NotFound();
 
-        await db.SaveChangesAsync();
-        return TypedResults.Ok(ToResponse(topic, parsedStatus == TopicStatus.CLOSED ? winningIdea : null));
+            if (string.Equals(request.Status, TopicStatus.CLOSED.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                http.Response.Headers["X-Info"] = "Topic closed. Once closed, it cannot be reopened.";
+            }
+
+            return TypedResults.Ok(topic);
+        }
+        catch (ArgumentException ex)
+        {
+            return TypedResults.BadRequest<object>(new { error = ex.Message });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return TypedResults.Forbid();
+        }
     }
 
     private static async Task<WinningIdeaResponse?> MarkWinningIdeaAsync(AppDbContext db, string topicId)
@@ -346,30 +210,6 @@ group.MapGet("/{id}", HandleGetTopicById)
         return MapToWinningIdeaResponse(winner);
     }
 
-    private static async Task<Results<Ok<TopicResponse>, NotFound, BadRequest<object>, ForbidHttpResult>> UpdateTopicWithInfoHeader(
-        string id,
-        UpdateTopicRequest request,
-        ClaimsPrincipal user,
-        AppDbContext db,
-        HttpContext http)
-    {
-        var previousStatus = await db.Topics
-            .AsNoTracking()
-            .Where(t => t.Id == id)
-            .Select(t => t.Status)
-            .FirstOrDefaultAsync();
-
-        var result = await HandleUpdateTopic(id, request, user, db);
-
-        if (result.Result is Ok<TopicResponse> ok &&
-            previousStatus == TopicStatus.OPEN &&
-            string.Equals(ok.Value?.Status, TopicStatus.CLOSED.ToString(), StringComparison.OrdinalIgnoreCase))
-        {
-            http.Response.Headers["X-Info"] = "Topic closed. Once closed, it cannot be reopened.";
-        }
-
-        return result;
-    }
 
     /// <summary>
     /// Deletes a topic. Only the owner can perform this action.
@@ -377,58 +217,23 @@ group.MapGet("/{id}", HandleGetTopicById)
     public static async Task<Results<Ok<object>, NotFound, ForbidHttpResult>> HandleDeleteTopic(
         string id,
         ClaimsPrincipal user,
-        AppDbContext db)
+        ITopicService service)
     {
-        // 1. Authentication (Checked by middleware [RequireAuthorization])
-        
-        // Find topic first to check ownership
-        var topic = await db.Topics.FindAsync(id);
-        if (topic is null) return TypedResults.NotFound();
-
-        // 2. Authorization (Ownership)
-        var login = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(login))
-            return TypedResults.Forbid();
-
-        var dbUser = await db.Users.FirstOrDefaultAsync(u => u.Login == login);
-        if (dbUser == null || topic.OwnerId != dbUser.Id)
-            return TypedResults.Forbid();
-
-        // Legacy schema note:
-        // The MySQL foreign keys in init.sql do NOT specify ON DELETE CASCADE for topics -> ideas.
-        // To keep the intended behavior (deleting a topic removes its ideas and votes), we perform
-        // an application-level cascade delete in the correct order.
-        var ideaIds = await db.Ideas
-            .AsNoTracking()
-            .Where(i => i.TopicId == id)
-            .Select(i => i.Id)
-            .ToListAsync();
-
-        if (ideaIds.Count > 0)
+        try
         {
-            // Prefer server-side deletes (EF Core 7/8) on relational providers only.
-            if (!db.Database.IsRelational())
-            {
-                var votes = await db.Votes.Where(v => ideaIds.Contains(v.IdeaId)).ToListAsync();
-                db.Votes.RemoveRange(votes);
+            var success = await service.DeleteTopicAsync(id, user);
+            if (!success) return TypedResults.NotFound();
 
-                var ideas = await db.Ideas.Where(i => i.TopicId == id).ToListAsync();
-                db.Ideas.RemoveRange(ideas);
-            }
-            else
+            return TypedResults.Ok<object>(new
             {
-                await db.Votes.Where(v => ideaIds.Contains(v.IdeaId)).ExecuteDeleteAsync();
-                await db.Ideas.Where(i => i.TopicId == id).ExecuteDeleteAsync();
-            }
+                message = "Topic deleted. This action also deleted all related ideas and votes.",
+                topicId = id
+            });
         }
-
-        db.Topics.Remove(topic);
-        await db.SaveChangesAsync();
-        return TypedResults.Ok<object>(new
+        catch (UnauthorizedAccessException)
         {
-            message = "Topic deleted. This action also deleted all related ideas and votes.",
-            topicId = id
-        });
+            return TypedResults.Forbid();
+        }
     }
 
     /// <summary>

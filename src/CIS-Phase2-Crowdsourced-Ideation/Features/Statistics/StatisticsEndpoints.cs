@@ -11,7 +11,7 @@ public static class StatisticsEndpoints
 
     public static IEndpointRouteBuilder MapStatisticsEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/statistics")
+        var group = endpoints.MapGroup("/api/v1/statistics")
             .WithTags("Statistics");
 
         group.MapGet("/top-topics", HandleTopTopics)

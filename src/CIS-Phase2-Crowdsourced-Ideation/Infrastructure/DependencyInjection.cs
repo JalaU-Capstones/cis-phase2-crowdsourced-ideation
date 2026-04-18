@@ -1,4 +1,5 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -28,9 +29,28 @@ public static class DependencyInjection
 
         services.AddDbContext<AppDbContext>(options =>
             options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
-        
+            
+        // Register persistence adapter based on config
+        var provider = configuration["Persistence:Provider"] ?? "MySQL";
+        if (provider.Equals("MySQL", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<IRepositoryAdapter, MySqlAdapter>();
+        }
+        else if (provider.Equals("MongoDB", StringComparison.OrdinalIgnoreCase))
+        {
+            var mongoConnection = configuration.GetConnectionString("MongoDbConnection")
+                ?? throw new InvalidOperationException("Connection string 'MongoDbConnection' was not found.");
+            services.AddSingleton(new MongoDbContext(mongoConnection, "sd3")); // Assuming database name sd3
+            services.AddScoped<IRepositoryAdapter, MongoDbAdapter>();
+        }
+        else
+        {
+            throw new InvalidOperationException($"Unsupported persistence provider: {provider}");
+        }
+
         // The secret key from Phase 1 (Java/Spring Boot) is configured in appsettings.json.
         // The Java implementation uses Decoders.BASE64.decode(secretKey).
+        // We must decode it from Base64 to get the actual key bytes.
         var secretKey = configuration["Jwt:SecretKey"]
             ?? throw new InvalidOperationException("Jwt:SecretKey is not configured.");
 

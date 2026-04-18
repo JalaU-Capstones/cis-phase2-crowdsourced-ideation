@@ -49,7 +49,40 @@ dotnet run --project src/CIS-Phase2-Crowdsourced-Ideation
 The API will be available at `http://localhost:5257`.
 Swagger UI (Development only): `http://localhost:5257/swagger`
 
-## 5. Authentication
+## 5. API Versioning and Persistence Configuration
+
+The API supports dual persistence (MySQL and MongoDB) and versioning (v1 and v2).
+
+### Persistence Configuration
+Configure the persistence provider in `appsettings.json`:
+```json
+{
+  "Persistence": {
+    "Provider": "MySQL"  // or "MongoDB"
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=localhost;Port=3307;Database=sd3;User Id=sd3user;Password=sd3pass;SslMode=None;AllowPublicKeyRetrieval=true;",
+    "MongoDbConnection": "mongodb://localhost:27017"
+  }
+}
+```
+
+- **MySQL**: Uses Entity Framework Core with Pomelo provider.
+- **MongoDB**: Uses MongoDB.Driver for NoSQL storage.
+
+### API Versioning
+- **v1** (`/api/v1/*`): Uses MySQL persistence.
+- **v2** (`/api/v2/*`): Uses MongoDB persistence.
+
+Examples:
+- Get all topics (v1): `GET /api/v1/topics`
+- Get all topics (v2): `GET /api/v2/topics`
+- Create idea (v1): `POST /api/v1/ideas`
+- Create idea (v2): `POST /api/v2/ideas`
+
+HATEOAS links are dynamically generated based on the API version.
+
+## 6. Authentication
 
 This API uses **JWT Bearer Token** authentication delegated from the Phase 1 User Management API. To obtain a token:
 
@@ -66,11 +99,11 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 
 3. Copy the returned token and use it in the `Authorization: Bearer <token>` header for protected Topics endpoints.
 
-## 6. Testing the API
+## 7. Testing the API
 
 GET operations on `/topics` are **public**. All write operations (POST, PUT, DELETE) require a valid JWT token. Ownership rules apply to PUT and DELETE.
 
-### 6.0. Note About Legacy Database Schema and HATEOAS
+### 7.0. Note About Legacy Database Schema and HATEOAS
 
 The local MySQL schema is defined in `init.sql` and is treated as legacy-compatible.
 
@@ -92,7 +125,7 @@ Ideas endpoints:
 - You cannot create an idea for a `CLOSED` topic (403 Forbidden).
 - If the related topic is `CLOSED`, updating or deleting an idea returns `403 Forbidden` with: `This topic is closed. No modifications allowed.`
 
-### 6.1. POST /api/topics — Create a Topic
+### 7.1. POST /api/topics — Create a Topic
 ```bash
 TOKEN="your_jwt_token_here"
 
@@ -125,7 +158,7 @@ curl -X POST http://localhost:5257/api/topics \
 }
 ```
 
-### 6.2. GET /api/topics — Get All Topics (Public)
+### 7.2. GET /api/topics — Get All Topics (Public)
 
 Supports pagination, filtering and sorting via query parameters.
 
@@ -189,7 +222,7 @@ curl "http://localhost:5257/api/topics?page=0&size=5&status=OPEN&sortBy=createdA
 { "error": "sortBy must be one of: createdAt, title, updatedAt." }
 ```
 
-### 6.3. GET /api/topics/{id} — Get Topic by ID (Public)
+### 7.3. GET /api/topics/{id} — Get Topic by ID (Public)
 ```bash
 TOPIC_ID="generated-uuid"
 
@@ -199,7 +232,7 @@ curl http://localhost:5257/api/topics/$TOPIC_ID
 **Expected Response (200 OK):** Topic object including `_links`.
 **Expected Response (404 Not Found):** Topic does not exist.
 
-### 6.4. PUT /api/topics/{id} — Update a Topic (Owner only)
+### 7.4. PUT /api/topics/{id} — Update a Topic (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
@@ -222,7 +255,7 @@ curl -X PUT http://localhost:5257/api/topics/$TOPIC_ID \
 Note: If you update a topic and set `status` to `CLOSED`, the response includes an `X-Info` header indicating the topic cannot be reopened. Once closed, attempts to set `status` back to `OPEN` will return `400 Bad Request`.
 When a topic is `CLOSED`, `GET /api/topics` and `GET /api/topics/{id}` will include `winningIdea` if an idea is marked with `isWinning=true`.
 
-### 6.5. DELETE /api/topics/{id} — Delete a Topic (Owner only)
+### 7.5. DELETE /api/topics/{id} — Delete a Topic (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
@@ -235,7 +268,7 @@ curl -X DELETE http://localhost:5257/api/topics/$TOPIC_ID \
 **Expected Response (404 Not Found):** Topic does not exist.
 **Expected Response (403 Forbidden):** You are not authorized to modify this topic.
 
-### 6.6. POST /api/ideas — Create an Idea (Authenticated)
+### 7.6. POST /api/ideas — Create an Idea (Authenticated)
 ```bash
 TOKEN="your_jwt_token_here"
 TOPIC_ID="generated-uuid"
@@ -272,7 +305,7 @@ curl -X POST http://localhost:5257/api/ideas \
 }
 ```
 
-### 6.6a. GET /api/ideas/topic/{topicId} — Get Ideas by Topic (Public)
+### 7.6a. GET /api/ideas/topic/{topicId} — Get Ideas by Topic (Public)
 ```bash
 TOPIC_ID="generated-uuid"
 
@@ -281,7 +314,7 @@ curl http://localhost:5257/api/ideas/topic/$TOPIC_ID
 
 **Expected Response (200 OK):** An array of ideas including `_links`. If the topic does not exist (or has no ideas), the response is `[]`.
 
-### 6.6b. GET /api/ideas — Get All Ideas (Public)
+### 7.6b. GET /api/ideas — Get All Ideas (Public)
 
 Supports pagination and sorting via query parameters.
 
@@ -341,7 +374,7 @@ curl "http://localhost:5257/api/ideas?page=0&size=5&sortBy=updatedAt&order=desc"
 { "error": "order must be 'asc' or 'desc'." }
 ```
 
-### 6.7. PUT /api/ideas/{id} — Update an Idea (Owner only)
+### 7.7. PUT /api/ideas/{id} — Update an Idea (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 IDEA_ID="generated-uuid"
@@ -357,7 +390,7 @@ curl -X PUT http://localhost:5257/api/ideas/$IDEA_ID \
 
 **Expected Response (200 OK):** Updated idea object including `_links`.
 
-### 6.8. DELETE /api/ideas/{id} — Delete an Idea (Owner only)
+### 7.8. DELETE /api/ideas/{id} — Delete an Idea (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 IDEA_ID="generated-uuid"
@@ -370,7 +403,7 @@ curl -X DELETE http://localhost:5257/api/ideas/$IDEA_ID \
 **Expected Response (404 Not Found):** Idea does not exist.
 **Expected Response (403 Forbidden):** You are not authorized to modify this idea, or the topic is closed.
 
-## 6.9. Votes (US 2.2)
+## 7.9. Votes (US 2.2)
 
 Votes allow authenticated users to vote on one or more ideas of the same topic. A user can only vote once per idea (enforced by a unique constraint in the database).
 
@@ -380,20 +413,20 @@ Important rules:
 - If the idea's topic is `CLOSED`, voting (create/update/delete) is forbidden and returns `403 Forbidden` with: `This topic is closed. Voting is no longer allowed.`
 - Only the owner of a vote can modify/delete it; otherwise returns `403 Forbidden` with: `You can only modify or delete your own vote.`
 
-### 6.9.1. GET /api/votes — Get All Votes (Public)
+### 7.9.1. GET /api/votes — Get All Votes (Public)
 ```bash
 curl http://localhost:5257/api/votes
 ```
 
 **Expected Response (200 OK):** Array of vote objects including `_links`.
 
-### 6.9.2. GET /api/votes/idea/{ideaId} — Get Votes for an Idea (Public)
+### 7.9.2. GET /api/votes/idea/{ideaId} — Get Votes for an Idea (Public)
 ```bash
 IDEA_ID="generated-uuid"
 curl http://localhost:5257/api/votes/idea/$IDEA_ID
 ```
 
-### 6.9.3. GET /api/votes/{voteId} — Get a Vote by ID (Public)
+### 7.9.3. GET /api/votes/{voteId} — Get a Vote by ID (Public)
 ```bash
 VOTE_ID="generated-uuid"
 curl http://localhost:5257/api/votes/$VOTE_ID
@@ -415,7 +448,7 @@ curl http://localhost:5257/api/votes/$VOTE_ID
 }
 ```
 
-### 6.9.4. POST /api/votes — Cast a Vote (Authenticated)
+### 7.9.4. POST /api/votes — Cast a Vote (Authenticated)
 ```bash
 TOKEN="your_jwt_token_here"
 IDEA_ID="generated-uuid"
@@ -430,7 +463,7 @@ curl -X POST http://localhost:5257/api/votes \
 
 **Expected Response (201 Created):** Vote object including `_links`.
 
-### 6.9.5. PUT /api/votes/{voteId} — Update a Vote (Owner only)
+### 7.9.5. PUT /api/votes/{voteId} — Update a Vote (Owner only)
 This endpoint updates the vote to point to a different idea. If you already voted for the target idea, the API returns `409 Conflict`.
 ```bash
 TOKEN="your_jwt_token_here"
@@ -447,7 +480,7 @@ curl -X PUT http://localhost:5257/api/votes/$VOTE_ID \
 
 **Expected Response (200 OK):** Updated vote object including `_links`.
 
-### 6.9.6. DELETE /api/votes/{voteId} — Delete a Vote (Owner only)
+### 7.9.6. DELETE /api/votes/{voteId} — Delete a Vote (Owner only)
 ```bash
 TOKEN="your_jwt_token_here"
 VOTE_ID="generated-uuid"
@@ -458,30 +491,30 @@ curl -X DELETE http://localhost:5257/api/votes/$VOTE_ID \
 
 **Expected Response (200 OK):** A confirmation message.
 
-## 6.10. Statistics (US 3.3) (Public)
+## 7.10. Statistics (US 3.3) (Public)
 
 All statistics endpoints are **public** (no JWT required) and support pagination where applicable.
 
-### 6.10.1. GET /api/statistics/top-topics?limit=10&offset=0
+### 7.10.1. GET /api/statistics/top-topics?limit=10&offset=0
 Returns topics ordered by total votes across all ideas in the topic (descending).
 ```bash
 curl "http://localhost:5257/api/statistics/top-topics?limit=10&offset=0"
 ```
 
-### 6.10.2. GET /api/statistics/most-voted-ideas?limit=10&offset=0
+### 7.10.2. GET /api/statistics/most-voted-ideas?limit=10&offset=0
 Returns ideas ordered by vote count (descending), including the idea's topic details.
 ```bash
 curl "http://localhost:5257/api/statistics/most-voted-ideas?limit=10&offset=0"
 ```
 
-### 6.10.3. GET /api/statistics/topic/{topicId}/summary
+### 7.10.3. GET /api/statistics/topic/{topicId}/summary
 Returns aggregated statistics for a single topic.
 ```bash
 TOPIC_ID="generated-uuid"
 curl "http://localhost:5257/api/statistics/topic/$TOPIC_ID/summary"
 ```
 
-## 7. Running Tests
+## 8. Running Tests
 ```bash
 dotnet test
 ```
@@ -500,7 +533,7 @@ dotnet tool run reportgenerator \
 
 Open `coverage-report/index.html` to view the report.
 
-## 8. Common Issues
+## 9. Common Issues
 
 - **401 Unauthorized**: Verify your token is valid and not expired. Check the `Authorization: Bearer <token>` header format.
 - **403 Forbidden**: You are trying to update or delete a topic that was created by another user.

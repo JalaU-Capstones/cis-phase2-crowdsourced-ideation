@@ -8,7 +8,7 @@ public static class VoteEndpoints
 {
     public static IEndpointRouteBuilder MapVoteEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/votes")
+        var group = endpoints.MapGroup("/api/v1/votes")
             .WithTags("Votes");
 
         // Public read access (no JWT required)
@@ -97,7 +97,7 @@ public static class VoteEndpoints
         try
         {
             var created = await service.CastVoteAsync(request, user);
-            return TypedResults.Created($"/api/votes/{created.Id}", created);
+            return TypedResults.Created($"/api/v1/votes/{created.Id}", created);
         }
         catch (VoteUnauthorizedException)
         {
