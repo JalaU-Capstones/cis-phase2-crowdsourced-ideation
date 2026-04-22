@@ -151,6 +151,20 @@ components:
           example: "Error summary"
       additionalProperties: true
 
+    # ----- HATEOAS Link -----
+    Link:
+      type: object
+      properties:
+        href:
+          type: string
+          example: "api/topics/550e8400-e29b-41d4-a716-446655440000"
+        method:
+          type: string
+          example: "GET"
+        rel:
+          type: string
+          example: "self"
+
     # ----- Topic Models -----
     TopicStatus:
       type: string
@@ -186,8 +200,9 @@ components:
         isWinning:
           type: boolean
         _links:
-          type: object
-          description: Placeholder for HATEOAS links
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
 
     TopicResponse:
       type: object
@@ -228,8 +243,22 @@ components:
           $ref: '#/components/schemas/WinningIdeaResponse'
           nullable: true
         _links:
-          type: object
-          description: Placeholder for HATEOAS links
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+          example:
+            - href: "api/topics/550e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "self"
+            - href: "api/ideas/topic/550e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "ideas"
+            - href: "api/topics/550e8400-e29b-41d4-a716-446655440000"
+              method: "PUT"
+              rel: "update"
+            - href: "api/topics/550e8400-e29b-41d4-a716-446655440000"
+              method: "DELETE"
+              rel: "delete"
 
     PagedTopicResponse:
       type: object
@@ -324,8 +353,28 @@ components:
           type: boolean
           example: false
         _links:
-          type: object
-          description: Placeholder for HATEOAS links
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+          example:
+            - href: "api/ideas/660e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "self"
+            - href: "api/topics/550e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "topic"
+            - href: "api/votes/idea/660e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "votes"
+            - href: "api/ideas/660e8400-e29b-41d4-a716-446655440000"
+              method: "PUT"
+              rel: "update"
+            - href: "api/ideas/660e8400-e29b-41d4-a716-446655440000"
+              method: "DELETE"
+              rel: "delete"
+            - href: "api/votes"
+              method: "POST"
+              rel: "vote"
 
     PagedIdeaResponse:
       type: object
@@ -403,8 +452,19 @@ components:
           type: string
           example: "Dashboard improvements"
         _links:
-          type: object
-          description: Placeholder for HATEOAS links
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+          example:
+            - href: "api/votes/idea/660e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "self"
+            - href: "api/ideas/660e8400-e29b-41d4-a716-446655440000"
+              method: "GET"
+              rel: "idea"
+            - href: "api/votes/770e8400-e29b-41d4-a716-446655440000"
+              method: "DELETE"
+              rel: "remove"
 
     CastVoteRequest:
       type: object
