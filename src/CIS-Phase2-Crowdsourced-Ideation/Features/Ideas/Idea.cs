@@ -1,5 +1,6 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
+using MongoDB.Bson.Serialization.Attributes;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -9,8 +10,10 @@ namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 
 public class Idea
 {
+    [BsonRepresentation(MongoDB.Bson.BsonType.String)]
     public Guid Id { get; set; }
     public string TopicId { get; set; } = string.Empty;
+    [BsonRepresentation(MongoDB.Bson.BsonType.String)]
     public Guid OwnerId { get; set; }
 
     // Legacy schema compatibility:

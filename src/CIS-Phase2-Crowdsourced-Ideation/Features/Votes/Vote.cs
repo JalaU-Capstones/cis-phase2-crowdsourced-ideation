@@ -1,4 +1,5 @@
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 
@@ -11,8 +12,11 @@ namespace CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 /// </summary>
 public sealed class Vote
 {
+    [BsonRepresentation(MongoDB.Bson.BsonType.String)]
     public Guid Id { get; set; } = Guid.NewGuid();
+    [BsonRepresentation(MongoDB.Bson.BsonType.String)]
     public Guid IdeaId { get; set; }
+    [BsonRepresentation(MongoDB.Bson.BsonType.String)]
     public Guid UserId { get; set; }
 
     public Idea Idea { get; set; } = null!;
