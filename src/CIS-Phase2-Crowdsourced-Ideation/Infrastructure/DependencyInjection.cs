@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Globalization;
+using System.Security.Claims;
 using System.Text;
 using System.Reflection;
 
@@ -60,15 +62,18 @@ public static class DependencyInjection
         }
 
         // The secret key from Phase 1 (Java/Spring Boot) is configured in appsettings.json.
-        // The Java implementation uses Decoders.BASE64.decode(secretKey).
-        // We must decode it from Base64 to get the actual key bytes.
+        // Different Phase 1 setups represent the same HMAC key differently:
+        // - raw string (e.g. "mySecretKey123")
+        // - Base64 encoded string
+        // - hex encoded string (common in tests)
         var secretKey = configuration["Jwt:SecretKey"]
-            ?? Convert.ToBase64String(Encoding.UTF8.GetBytes("test-secret-key-test-secret-key-test-secret-key"));
+            ?? "test-secret-key-test-secret-key-test-secret-key";
 
-        // IMPORTANT: The secret key from Phase 1 is Base64 encoded in the Java configuration.
-        // We must decode it from Base64 to get the actual key bytes.
-        var signingKeyBytes = Convert.FromBase64String(secretKey);
+        var signingKeyBytes = DecodeJwtSecret(secretKey);
         var signingKey = new SymmetricSecurityKey(signingKeyBytes);
+
+        var issuer = configuration["Jwt:Issuer"];
+        var audience = configuration["Jwt:Audience"];
 
         services
             .AddAuthentication(options =>
@@ -80,13 +85,16 @@ public static class DependencyInjection
             {
                 options.RequireHttpsMetadata =
                     configuration.GetValue("Jwt:RequireHttpsMetadata", false);
+                options.MapInboundClaims = false;
 
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey         = signingKey,
-                    ValidateIssuer           = false, 
-                    ValidateAudience         = false,
+                    ValidateIssuer           = !string.IsNullOrWhiteSpace(issuer),
+                    ValidIssuer              = issuer,
+                    ValidateAudience         = !string.IsNullOrWhiteSpace(audience),
+                    ValidAudience            = audience,
                     ValidateLifetime         = true,
                     ClockSkew                = TimeSpan.Zero,
                     NameClaimType            = "sub"
@@ -94,6 +102,18 @@ public static class DependencyInjection
 
                 options.Events = new JwtBearerEvents
                 {
+                    OnTokenValidated = context =>
+                    {
+                        // Ensure consumers can rely on ClaimTypes.NameIdentifier being present.
+                        var identity = context.Principal?.Identity as ClaimsIdentity;
+                        if (identity is not null && !identity.HasClaim(c => c.Type == ClaimTypes.NameIdentifier))
+                        {
+                            var sub = identity.FindFirst("sub")?.Value;
+                            if (!string.IsNullOrWhiteSpace(sub))
+                                identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, sub));
+                        }
+                        return Task.CompletedTask;
+                    },
                     OnChallenge = context =>
                     {
                         context.HandleResponse();
@@ -171,5 +191,53 @@ public static class DependencyInjection
         });
 
         return services;
+    }
+
+    private static byte[] DecodeJwtSecret(string secret)
+    {
+        if (string.IsNullOrWhiteSpace(secret))
+            return Encoding.UTF8.GetBytes("test-secret-key-test-secret-key-test-secret-key");
+
+        var s = secret.Trim();
+
+        // Prefer hex detection first because a hex string can also be valid Base64 characters.
+        if (LooksLikeHex(s))
+        {
+            try { return DecodeHex(s); }
+            catch (FormatException) { /* fall through */ }
+        }
+
+        try
+        {
+            return Convert.FromBase64String(s);
+        }
+        catch (FormatException)
+        {
+            // Not Base64, treat as raw.
+            return Encoding.UTF8.GetBytes(s);
+        }
+    }
+
+    private static bool LooksLikeHex(string s)
+    {
+        if (s.Length < 2 || (s.Length % 2) != 0)
+            return false;
+
+        foreach (var c in s)
+        {
+            if (!Uri.IsHexDigit(c))
+                return false;
+        }
+        return true;
+    }
+
+    private static byte[] DecodeHex(string hex)
+    {
+        var bytes = new byte[hex.Length / 2];
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            bytes[i] = byte.Parse(hex.AsSpan(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        }
+        return bytes;
     }
 }

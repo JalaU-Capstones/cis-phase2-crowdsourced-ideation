@@ -47,38 +47,46 @@ public static class UserIdentityResolver
 
     private static async Task<Guid> ResolveOrProvisionMongoUserIdAsync(IRepositoryAdapter adapter, ClaimsPrincipal user)
     {
-        // MongoDB user identification must be driven by the external user id from the JWT.
-        // We do not generate a new GUID for Mongo, because that creates duplicates.
+        // V2 (MongoDB): tokens may have `sub` as login (e.g. "jroca") rather than a UUID.
+        // To prevent duplicates we:
+        // 1) Prefer an explicit UUID claim if present (userId/id/etc).
+        // 2) Otherwise lookup by login in Mongo's users collection and reuse that id.
+        // 3) Provision a placeholder only if truly missing (first interaction).
         var sub = user.FindFirstValue("sub")
                   ?? user.FindFirstValue(ClaimTypes.NameIdentifier)
                   ?? user.Identity?.Name;
 
-        var idClaim = user.FindFirstValue("userId")
-                      ?? user.FindFirstValue("id")
-                      ?? user.FindFirstValue("uid")
-                      ?? user.FindFirstValue("user_id");
+        var externalIdClaim = user.FindFirstValue("userId")
+                              ?? user.FindFirstValue("id")
+                              ?? user.FindFirstValue("uid")
+                              ?? user.FindFirstValue("user_id")
+                              ?? user.FindFirstValue("jti");
 
-        var login = user.FindFirstValue("login") ?? user.FindFirstValue("preferred_username") ?? sub ?? idClaim;
+        var login = user.FindFirstValue("login") ?? user.FindFirstValue("preferred_username") ?? sub;
         var name = user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name) ?? login;
 
-        if (!TryGetMongoUserId(sub, idClaim, out var userId))
+        if (!string.IsNullOrWhiteSpace(externalIdClaim) && Guid.TryParse(externalIdClaim, out var userIdFromClaim))
+        {
+            await EnsureUserExistsAsync(adapter, userIdFromClaim, login, name);
+            return userIdFromClaim;
+        }
+
+        if (string.IsNullOrWhiteSpace(login))
             throw new UnauthorizedAccessException("User identity not found or invalid");
 
-        await EnsureUserExistsAsync(adapter, userId, login, name);
-        return userId;
-    }
+        var normalizedLogin = NormalizeLogin(login);
+        var dbUser = await adapter.Users.GetByLoginAsync(normalizedLogin);
+        if (dbUser is not null && Guid.TryParse(dbUser.Id, out var existingUserId))
+        {
+            // Existing login mapping: reuse id and do not create duplicates.
+            return existingUserId;
+        }
 
-    private static bool TryGetMongoUserId(string? sub, string? idClaim, out Guid userId)
-    {
-        // Prefer the subject claim, but fall back to other commonly used id claims.
-        if (!string.IsNullOrWhiteSpace(sub) && Guid.TryParse(sub, out userId))
-            return true;
-
-        if (!string.IsNullOrWhiteSpace(idClaim) && Guid.TryParse(idClaim, out userId))
-            return true;
-
-        userId = default;
-        return false;
+        // First-time interaction and we don't have an external UUID in the JWT.
+        // We provision a placeholder user id to keep ownership stable within this API.
+        var provisionedId = Guid.NewGuid();
+        await EnsureUserExistsAsync(adapter, provisionedId, normalizedLogin, name);
+        return provisionedId;
     }
 
     private static bool TryGetUserId(ClaimsPrincipal user, string? sub, out Guid userId)
