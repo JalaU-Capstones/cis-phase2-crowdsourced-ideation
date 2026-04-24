@@ -1,6 +1,8 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -42,7 +44,10 @@ public static class TopicEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         var protectedGroup = group.MapGroup("/")
-            .RequireAuthorization();
+            .RequireAuthorization(new AuthorizeAttribute
+            {
+                AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme
+            });
 
         protectedGroup.MapPost("/", (CreateTopicRequest request, ClaimsPrincipal user, HttpContext http) =>
                 HandleCreateTopic(request, user, http, version))

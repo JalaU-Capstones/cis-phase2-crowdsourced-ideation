@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.OpenApi.Any;
@@ -48,7 +50,10 @@ public static class IdeaEndpoints
             .Produces<IEnumerable<IdeaResponse>>(StatusCodes.Status200OK);
 
         var protectedGroup = group.MapGroup("/")
-            .RequireAuthorization();
+            .RequireAuthorization(new AuthorizeAttribute
+            {
+                AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme
+            });
 
         protectedGroup.MapPost("/", (CreateIdeaRequest request, HttpContext http, ClaimsPrincipal user) =>
                 CreateIdea(request, http, user, version))
