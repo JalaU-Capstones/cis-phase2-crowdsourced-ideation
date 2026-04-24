@@ -15,6 +15,15 @@ public static class UserIdentityResolver
     /// </summary>
     public static async Task<Guid> ResolveOrProvisionUserIdAsync(IRepositoryAdapter adapter, ClaimsPrincipal user)
     {
+        // NOTE: Phase 2 uses dual persistence. For V2 (MongoDB), we must treat the JWT-provided
+        // user identifier as the source of truth to avoid provisioning duplicate "local" users.
+        // For V1 (MySQL), we keep the legacy behavior that can resolve users by login and
+        // provision a new GUID when the token doesn't contain a GUID id claim.
+        if (adapter is MongoDbAdapter)
+        {
+            return await ResolveOrProvisionMongoUserIdAsync(adapter, user);
+        }
+
         var sub = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
         var login = user.FindFirstValue("login") ?? user.FindFirstValue("preferred_username") ?? sub;
         var name = user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name) ?? login;
@@ -34,6 +43,42 @@ public static class UserIdentityResolver
 
         await EnsureUserExistsAsync(adapter, userId, login, name);
         return userId;
+    }
+
+    private static async Task<Guid> ResolveOrProvisionMongoUserIdAsync(IRepositoryAdapter adapter, ClaimsPrincipal user)
+    {
+        // MongoDB user identification must be driven by the external user id from the JWT.
+        // We do not generate a new GUID for Mongo, because that creates duplicates.
+        var sub = user.FindFirstValue("sub")
+                  ?? user.FindFirstValue(ClaimTypes.NameIdentifier)
+                  ?? user.Identity?.Name;
+
+        var idClaim = user.FindFirstValue("userId")
+                      ?? user.FindFirstValue("id")
+                      ?? user.FindFirstValue("uid")
+                      ?? user.FindFirstValue("user_id");
+
+        var login = user.FindFirstValue("login") ?? user.FindFirstValue("preferred_username") ?? sub ?? idClaim;
+        var name = user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name) ?? login;
+
+        if (!TryGetMongoUserId(sub, idClaim, out var userId))
+            throw new UnauthorizedAccessException("User identity not found or invalid");
+
+        await EnsureUserExistsAsync(adapter, userId, login, name);
+        return userId;
+    }
+
+    private static bool TryGetMongoUserId(string? sub, string? idClaim, out Guid userId)
+    {
+        // Prefer the subject claim, but fall back to other commonly used id claims.
+        if (!string.IsNullOrWhiteSpace(sub) && Guid.TryParse(sub, out userId))
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(idClaim) && Guid.TryParse(idClaim, out userId))
+            return true;
+
+        userId = default;
+        return false;
     }
 
     private static bool TryGetUserId(ClaimsPrincipal user, string? sub, out Guid userId)
@@ -81,4 +126,3 @@ public static class UserIdentityResolver
         return v.Length <= 20 ? v : v[..20];
     }
 }
-
