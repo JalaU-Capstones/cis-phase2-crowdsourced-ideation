@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
+using CIS.Phase2.CrowdsourcedIdeation.Services;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 
@@ -47,46 +48,41 @@ public static class UserIdentityResolver
 
     private static async Task<Guid> ResolveOrProvisionMongoUserIdAsync(IRepositoryAdapter adapter, ClaimsPrincipal user)
     {
-        // V2 (MongoDB): tokens may have `sub` as login (e.g. "jroca") rather than a UUID.
-        // To prevent duplicates we:
-        // 1) Prefer an explicit UUID claim if present (userId/id/etc).
-        // 2) Otherwise lookup by login in Mongo's users collection and reuse that id.
-        // 3) Provision a placeholder only if truly missing (first interaction).
-        var sub = user.FindFirstValue("sub")
-                  ?? user.FindFirstValue(ClaimTypes.NameIdentifier)
-                  ?? user.Identity?.Name;
+        // V2 (MongoDB): Phase 1 tokens contain `sub` = login, with no external UUID claim.
+        // We resolve the external UUID by:
+        // 1) Using an existing Mongo user record keyed by login (already synced).
+        // 2) If missing, calling the Java User Management API to fetch the user's UUID, then
+        //    persisting it locally (Mongo) and returning that UUID.
+        var login =
+            user.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? user.FindFirstValue("sub")
+            ?? user.Identity?.Name;
 
-        var externalIdClaim = user.FindFirstValue("userId")
-                              ?? user.FindFirstValue("id")
-                              ?? user.FindFirstValue("uid")
-                              ?? user.FindFirstValue("user_id")
-                              ?? user.FindFirstValue("jti");
-
-        var login = user.FindFirstValue("login") ?? user.FindFirstValue("preferred_username") ?? sub;
         var name = user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name) ?? login;
-
-        if (!string.IsNullOrWhiteSpace(externalIdClaim) && Guid.TryParse(externalIdClaim, out var userIdFromClaim))
-        {
-            await EnsureUserExistsAsync(adapter, userIdFromClaim, login, name);
-            return userIdFromClaim;
-        }
 
         if (string.IsNullOrWhiteSpace(login))
             throw new UnauthorizedAccessException("User identity not found or invalid");
 
-        var normalizedLogin = NormalizeLogin(login);
-        var dbUser = await adapter.Users.GetByLoginAsync(normalizedLogin);
+        login = login.Trim();
+
+        // First: local Mongo lookup by login.
+        var dbUser = await adapter.Users.GetByLoginAsync(login);
         if (dbUser is not null && Guid.TryParse(dbUser.Id, out var existingUserId))
         {
-            // Existing login mapping: reuse id and do not create duplicates.
             return existingUserId;
         }
 
-        // First-time interaction and we don't have an external UUID in the JWT.
-        // We provision a placeholder user id to keep ownership stable within this API.
-        var provisionedId = Guid.NewGuid();
-        await EnsureUserExistsAsync(adapter, provisionedId, normalizedLogin, name);
-        return provisionedId;
+        // Not found locally: fetch from Java API and cache in Mongo.
+        var resolver = UserResolverAccessor.Current;
+        if (resolver is null)
+            throw new UnauthorizedAccessException("External user resolver not configured");
+
+        var external = await resolver.GetByLoginAsync(login);
+        if (!Guid.TryParse(external.Id, out var externalUserId))
+            throw new UnauthorizedAccessException("External user identity not found or invalid");
+
+        await EnsureMongoUserExistsAsync(adapter, externalUserId, external.Login ?? login, external.Name ?? name);
+        return externalUserId;
     }
 
     private static bool TryGetUserId(ClaimsPrincipal user, string? sub, out Guid userId)
@@ -112,6 +108,30 @@ public static class UserIdentityResolver
         var normalizedName = (name ?? normalizedLogin).Trim();
 
         // Password is not used by Phase 2; authentication is delegated to Phase 1 (JWT).
+        var user = new UserRecord
+        {
+            Id = id,
+            Login = normalizedLogin,
+            Name = normalizedName,
+            Password = "external"
+        };
+
+        await adapter.Users.AddAsync(user);
+        await adapter.SaveChangesAsync();
+    }
+
+    private static async Task EnsureMongoUserExistsAsync(IRepositoryAdapter adapter, Guid userId, string? login, string? name)
+    {
+        var id = userId.ToString();
+        if (await adapter.Users.ExistsAsync(id))
+            return;
+
+        var normalizedLogin = (login ?? id).Trim();
+        if (string.IsNullOrWhiteSpace(normalizedLogin))
+            normalizedLogin = "unknown";
+
+        var normalizedName = (name ?? normalizedLogin).Trim();
+
         var user = new UserRecord
         {
             Id = id,

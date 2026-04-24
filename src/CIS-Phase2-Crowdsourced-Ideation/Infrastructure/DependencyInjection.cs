@@ -1,5 +1,6 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
+using CIS.Phase2.CrowdsourcedIdeation.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -66,14 +67,12 @@ public static class DependencyInjection
         // - raw string (e.g. "mySecretKey123")
         // - Base64 encoded string
         // - hex encoded string (common in tests)
+        // IMPORTANT: The Java User Management API expects the configured secret to be Base64 decoded.
         var secretKey = configuration["Jwt:SecretKey"]
             ?? "test-secret-key-test-secret-key-test-secret-key";
 
-        var signingKeyBytes = DecodeJwtSecret(secretKey);
+        var signingKeyBytes = DecodeJwtSecret(secretKey, configuration["Jwt:SecretKeyEncoding"]);
         var signingKey = new SymmetricSecurityKey(signingKeyBytes);
-
-        var issuer = configuration["Jwt:Issuer"];
-        var audience = configuration["Jwt:Audience"];
 
         services
             .AddAuthentication(options =>
@@ -91,10 +90,9 @@ public static class DependencyInjection
                 {
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey         = signingKey,
-                    ValidateIssuer           = !string.IsNullOrWhiteSpace(issuer),
-                    ValidIssuer              = issuer,
-                    ValidateAudience         = !string.IsNullOrWhiteSpace(audience),
-                    ValidAudience            = audience,
+                    // Phase 1 tokens do not include `iss`/`aud`.
+                    ValidateIssuer           = false,
+                    ValidateAudience         = false,
                     ValidateLifetime         = true,
                     ClockSkew                = TimeSpan.Zero,
                     NameClaimType            = "sub"
@@ -131,6 +129,9 @@ public static class DependencyInjection
             });
 
         services.AddAuthorization();
+
+        // External user lookup (Phase 1 Java API), used by V2 user resolution when JWT only has login.
+        services.AddHttpClient<IUserResolver, UserResolver>();
 
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(c =>
@@ -193,42 +194,27 @@ public static class DependencyInjection
         return services;
     }
 
-    private static byte[] DecodeJwtSecret(string secret)
+    private static byte[] DecodeJwtSecret(string secret, string? encoding)
     {
         if (string.IsNullOrWhiteSpace(secret))
             return Encoding.UTF8.GetBytes("test-secret-key-test-secret-key-test-secret-key");
 
         var s = secret.Trim();
+        var enc = (encoding ?? "base64").Trim().ToLowerInvariant();
 
-        // Prefer hex detection first because a hex string can also be valid Base64 characters.
-        if (LooksLikeHex(s))
+        return enc switch
         {
-            try { return DecodeHex(s); }
-            catch (FormatException) { /* fall through */ }
-        }
-
-        try
-        {
-            return Convert.FromBase64String(s);
-        }
-        catch (FormatException)
-        {
-            // Not Base64, treat as raw.
-            return Encoding.UTF8.GetBytes(s);
-        }
+            "hex" => DecodeHex(s),
+            "raw" => Encoding.UTF8.GetBytes(s),
+            // Default: Base64 decode to match Java's Decoders.BASE64.decode(secretKey).
+            _ => TryDecodeBase64OrRaw(s)
+        };
     }
 
-    private static bool LooksLikeHex(string s)
+    private static byte[] TryDecodeBase64OrRaw(string s)
     {
-        if (s.Length < 2 || (s.Length % 2) != 0)
-            return false;
-
-        foreach (var c in s)
-        {
-            if (!Uri.IsHexDigit(c))
-                return false;
-        }
-        return true;
+        try { return Convert.FromBase64String(s); }
+        catch (FormatException) { return Encoding.UTF8.GetBytes(s); }
     }
 
     private static byte[] DecodeHex(string hex)
