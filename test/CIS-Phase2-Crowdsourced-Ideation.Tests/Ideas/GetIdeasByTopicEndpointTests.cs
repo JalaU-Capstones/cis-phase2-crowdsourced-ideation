@@ -59,7 +59,7 @@ public sealed class GetIdeasByTopicEndpointTests
         await using var factory = new ApiFactory(Guid.NewGuid().ToString());
         var client = factory.CreateClient();
 
-        var response = await client.GetAsync($"/api/ideas/topic/{topicId}");
+        var response = await client.GetAsync($"/api/v1/ideas/topic/{topicId}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadFromJsonAsync<IdeaResponse[]>();
@@ -110,7 +110,7 @@ public sealed class GetIdeasByTopicEndpointTests
         }
 
         var client = factory.CreateClient();
-        var ideas = await client.GetFromJsonAsync<IdeaResponse[]>($"/api/ideas/topic/{topicId}");
+        var ideas = await client.GetFromJsonAsync<IdeaResponse[]>($"/api/v1/ideas/topic/{topicId}");
 
         ideas.Should().NotBeNull();
         ideas!.Should().HaveCount(1);

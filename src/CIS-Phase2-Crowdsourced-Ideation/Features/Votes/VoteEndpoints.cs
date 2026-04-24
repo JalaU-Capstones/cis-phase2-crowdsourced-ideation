@@ -1,77 +1,73 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using System.Security.Claims;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 
 public static class VoteEndpoints
 {
-    public static IEndpointRouteBuilder MapVoteEndpoints(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapVoteEndpoints(this IEndpointRouteBuilder endpoints, string version = "v1")
     {
-        var group = endpoints.MapGroup("/api/votes")
+        var group = endpoints.MapGroup($"/api/{version}/votes")
             .WithTags("Votes");
 
-        // Public read access (no JWT required)
-        group.MapGet("/", HandleGetAllVotes)
-            .WithName("GetAllVotes")
-            .WithSummary("Get all votes (public)")
-            .WithDescription("Public endpoint. Returns votes including idea and topic details.")
+        group.AddEndpointFilter(async (context, next) =>
+        {
+            var adapter = version == "v2" 
+                ? (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MongoDbAdapter>()
+                : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
+            
+            context.HttpContext.Items["RepositoryAdapter"] = adapter;
+            return await next(context);
+        });
+
+        group.MapGet("/", (Func<HttpContext, Task<IResult>>)(http => HandleGetAllVotes(http, version)))
+            .WithName($"GetAllVotes_{version}")
+            .WithSummary($"Get all votes ({version})")
             .Produces<IReadOnlyList<VoteResponse>>(StatusCodes.Status200OK);
 
-        group.MapGet("/idea/{ideaId:guid}", HandleGetVotesByIdea)
-            .WithName("GetVotesByIdea")
-            .WithSummary("Get votes for an idea (public)")
-            .WithDescription("Public endpoint. Returns votes for a specific idea, including idea and topic details.")
+        group.MapGet("/idea/{ideaId:guid}", (Guid ideaId, HttpContext http) => HandleGetVotesByIdea(ideaId, http, version))
+            .WithName($"GetVotesByIdea_{version}")
+            .WithSummary($"Get votes for an idea ({version})")
             .Produces<IReadOnlyList<VoteResponse>>(StatusCodes.Status200OK);
 
-        group.MapGet("/{voteId:guid}", HandleGetVoteById)
-            .WithName("GetVoteById")
-            .WithSummary("Get a vote by id (public)")
-            .WithDescription("Public endpoint. Returns a vote including idea and topic details.")
+        group.MapGet("/{voteId:guid}", (Guid voteId, HttpContext http) => HandleGetVoteById(voteId, http, version))
+            .WithName($"GetVoteById_{version}")
+            .WithSummary($"Get a vote by id ({version})")
             .Produces<VoteResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
 
-        // Protected write access (JWT required)
         var protectedGroup = group.MapGroup("/")
-            .RequireAuthorization();
+            .RequireAuthorization(new AuthorizeAttribute
+            {
+                AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme
+            });
 
-        protectedGroup.MapPost("/", HandleCastVote)
-            .WithName("CastVote")
-            .WithSummary("Cast a vote for an idea (authenticated)")
-            .WithDescription("""
-                Requires authentication.
-                Business rules:
-                - One vote per user per idea (duplicate votes return 409 Conflict).
-                - If the idea's topic is CLOSED, returns 403 Forbidden with: "This topic is closed. Voting is no longer allowed."
-                """)
+        protectedGroup.MapPost("/", (CastVoteRequest request, HttpContext http, ClaimsPrincipal user) => HandleCastVote(request, http, user, version))
+            .WithName($"CastVote_{version}")
+            .WithSummary($"Cast a vote for an idea ({version})")
             .Produces<VoteResponse>(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status409Conflict);
 
-        protectedGroup.MapPut("/{voteId:guid}", HandleUpdateVote)
-            .WithName("UpdateVote")
-            .WithSummary("Update a vote (owner only)")
-            .WithDescription("""
-                Requires authentication.
-                Only the vote owner can modify their vote.
-                If the current or target idea belongs to a CLOSED topic, returns 403 Forbidden with: "This topic is closed. Voting is no longer allowed."
-                """)
+        protectedGroup.MapPut("/{voteId:guid}", (Guid voteId, UpdateVoteRequest request, HttpContext http, ClaimsPrincipal user) => HandleUpdateVote(voteId, request, http, user, version))
+            .WithName($"UpdateVote_{version}")
+            .WithSummary($"Update a vote ({version})")
             .Produces<VoteResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status409Conflict);
 
-        protectedGroup.MapDelete("/{voteId:guid}", HandleDeleteVote)
-            .WithName("DeleteVote")
-            .WithSummary("Delete a vote (owner only)")
-            .WithDescription("""
-                Requires authentication.
-                Only the vote owner can delete their vote.
-                If the vote's idea belongs to a CLOSED topic, returns 403 Forbidden with: "This topic is closed. Voting is no longer allowed."
-                """)
+        protectedGroup.MapDelete("/{voteId:guid}", (Guid voteId, HttpContext http, ClaimsPrincipal user) => HandleDeleteVote(voteId, http, user, version))
+            .WithName($"DeleteVote_{version}")
+            .WithSummary($"Delete a vote ({version})")
             .Produces(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
@@ -80,24 +76,38 @@ public static class VoteEndpoints
         return endpoints;
     }
 
-    internal static async Task<Ok<IReadOnlyList<VoteResponse>>> HandleGetAllVotes(IVoteService service)
-        => TypedResults.Ok(await service.GetAllAsync());
-
-    internal static async Task<Ok<IReadOnlyList<VoteResponse>>> HandleGetVotesByIdea(Guid ideaId, IVoteService service)
-        => TypedResults.Ok(await service.GetByIdeaIdAsync(ideaId));
-
-    internal static async Task<Results<Ok<VoteResponse>, NotFound>> HandleGetVoteById(Guid voteId, IVoteService service)
+    private static IVoteService GetService(HttpContext http, string version)
     {
+        var adapter = (IRepositoryAdapter)http.Items["RepositoryAdapter"]!;
+        return new VoteService(adapter, version);
+    }
+
+    internal static async Task<IResult> HandleGetAllVotes(HttpContext http, string version)
+    {
+        var service = GetService(http, version);
+        return TypedResults.Ok(await service.GetAllAsync());
+    }
+
+    internal static async Task<IResult> HandleGetVotesByIdea(Guid ideaId, HttpContext http, string version)
+    {
+        var service = GetService(http, version);
+        return TypedResults.Ok(await service.GetByIdeaIdAsync(ideaId));
+    }
+
+    internal static async Task<Results<Ok<VoteResponse>, NotFound>> HandleGetVoteById(Guid voteId, HttpContext http, string version)
+    {
+        var service = GetService(http, version);
         var vote = await service.GetByIdAsync(voteId);
         return vote is null ? TypedResults.NotFound() : TypedResults.Ok(vote);
     }
 
-    internal static async Task<IResult> HandleCastVote(CastVoteRequest request, IVoteService service, ClaimsPrincipal user)
+    internal static async Task<IResult> HandleCastVote(CastVoteRequest request, HttpContext http, ClaimsPrincipal user, string version)
     {
         try
         {
+            var service = GetService(http, version);
             var created = await service.CastVoteAsync(request, user);
-            return TypedResults.Created($"/api/votes/{created.Id}", created);
+            return TypedResults.Created($"/api/{version}/votes/{created.Id}", created);
         }
         catch (VoteUnauthorizedException)
         {
@@ -117,10 +127,11 @@ public static class VoteEndpoints
         }
     }
 
-    internal static async Task<IResult> HandleUpdateVote(Guid voteId, UpdateVoteRequest request, IVoteService service, ClaimsPrincipal user)
+    internal static async Task<IResult> HandleUpdateVote(Guid voteId, UpdateVoteRequest request, HttpContext http, ClaimsPrincipal user, string version)
     {
         try
         {
+            var service = GetService(http, version);
             var updated = await service.UpdateVoteAsync(voteId, request, user);
             return updated is null ? TypedResults.NotFound() : TypedResults.Ok(updated);
         }
@@ -142,10 +153,11 @@ public static class VoteEndpoints
         }
     }
 
-    internal static async Task<IResult> HandleDeleteVote(Guid voteId, IVoteService service, ClaimsPrincipal user)
+    internal static async Task<IResult> HandleDeleteVote(Guid voteId, HttpContext http, ClaimsPrincipal user, string version)
     {
         try
         {
+            var service = GetService(http, version);
             var deleted = await service.DeleteVoteAsync(voteId, user);
             return deleted
                 ? TypedResults.Ok(new { message = "Vote deleted.", voteId })

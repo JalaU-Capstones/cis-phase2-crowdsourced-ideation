@@ -83,16 +83,16 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var client = _factory.CreateClient();
 
-        (await client.GetAsync("/api/votes")).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await client.GetAsync($"/api/votes/idea/{Guid.NewGuid()}")).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await client.GetAsync($"/api/votes/{Guid.NewGuid()}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.GetAsync("/api/v1/votes")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetAsync($"/api/v1/votes/idea/{Guid.NewGuid()}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetAsync($"/api/v1/votes/{Guid.NewGuid()}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
     public async Task PostVote_RequiresAuthentication()
     {
         var client = _factory.CreateClient();
-        var response = await client.PostAsJsonAsync("/api/votes", new CastVoteRequest(Guid.NewGuid()));
+        var response = await client.PostAsJsonAsync("/api/v1/votes", new CastVoteRequest(Guid.NewGuid()));
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
@@ -132,7 +132,7 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TokenForLogin(login));
 
-        var post = await client.PostAsJsonAsync("/api/votes", new CastVoteRequest(ideaId));
+        var post = await client.PostAsJsonAsync("/api/v1/votes", new CastVoteRequest(ideaId));
         post.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var created = await post.Content.ReadFromJsonAsync<VoteResponse>();
@@ -142,14 +142,14 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
         created.TopicId.Should().Be(topicId);
         created.TopicTitle.Should().Be("Topic A");
 
-        var allVotes = await client.GetFromJsonAsync<List<VoteResponse>>("/api/votes");
+        var allVotes = await client.GetFromJsonAsync<List<VoteResponse>>("/api/v1/votes");
         allVotes.Should().NotBeNull();
         allVotes!.Should().ContainSingle(v => v.Id == created.Id);
 
-        var byIdea = await client.GetFromJsonAsync<List<VoteResponse>>($"/api/votes/idea/{ideaId}");
+        var byIdea = await client.GetFromJsonAsync<List<VoteResponse>>($"/api/v1/votes/idea/{ideaId}");
         byIdea!.Should().ContainSingle(v => v.Id == created.Id);
 
-        var byId = await client.GetFromJsonAsync<VoteResponse>($"/api/votes/{created.Id}");
+        var byId = await client.GetFromJsonAsync<VoteResponse>($"/api/v1/votes/{created.Id}");
         byId.Should().NotBeNull();
         byId!.Id.Should().Be(created.Id);
     }
@@ -191,8 +191,8 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TokenForLogin(login));
 
-        (await client.PostAsJsonAsync("/api/votes", new CastVoteRequest(ideaId))).StatusCode.Should().Be(HttpStatusCode.Created);
-        var dup = await client.PostAsJsonAsync("/api/votes", new CastVoteRequest(ideaId));
+        (await client.PostAsJsonAsync("/api/v1/votes", new CastVoteRequest(ideaId))).StatusCode.Should().Be(HttpStatusCode.Created);
+        var dup = await client.PostAsJsonAsync("/api/v1/votes", new CastVoteRequest(ideaId));
 
         dup.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var body = await dup.Content.ReadFromJsonAsync<ErrorResponse>();
@@ -237,11 +237,11 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TokenForLogin(login));
 
-        var cast = await client.PostAsJsonAsync("/api/votes", new CastVoteRequest(ideaId));
+        var cast = await client.PostAsJsonAsync("/api/v1/votes", new CastVoteRequest(ideaId));
         cast.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await cast.Content.ReadAsStringAsync()).Should().Contain("This topic is closed. Voting is no longer allowed.");
 
-        var del = await client.DeleteAsync($"/api/votes/{voteId}");
+        var del = await client.DeleteAsync($"/api/v1/votes/{voteId}");
         del.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await del.Content.ReadAsStringAsync()).Should().Contain("This topic is closed. Voting is no longer allowed.");
     }
@@ -286,7 +286,7 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TokenForLogin(otherLogin));
 
-        var del = await client.DeleteAsync($"/api/votes/{voteId}");
+        var del = await client.DeleteAsync($"/api/v1/votes/{voteId}");
         del.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await del.Content.ReadAsStringAsync()).Should().Contain("You can only modify or delete your own vote.");
     }
@@ -329,7 +329,7 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TokenForLogin(ownerLogin));
 
-        var del = await client.DeleteAsync($"/api/ideas/{ideaId}");
+        var del = await client.DeleteAsync($"/api/v1/ideas/{ideaId}");
         del.StatusCode.Should().Be(HttpStatusCode.OK);
         (await del.Content.ReadAsStringAsync()).Should().Contain("All votes related to this idea were deleted as well");
 
@@ -390,7 +390,7 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", TokenForLogin(topicOwnerLogin));
 
-        var put = await client.PutAsJsonAsync($"/api/topics/{topicId}", new UpdateTopicRequest("Topic A", "Desc", "CLOSED"));
+        var put = await client.PutAsJsonAsync($"/api/v1/topics/{topicId}", new UpdateTopicRequest("Topic A", "Desc", "CLOSED"));
         put.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var putBody = await put.Content.ReadFromJsonAsync<TopicResponse>();
@@ -398,7 +398,7 @@ public sealed class VoteApiTests : IClassFixture<WebApplicationFactory<Program>>
         putBody!.WinningIdea.Should().NotBeNull();
         putBody.WinningIdea!.Title.Should().Be("Idea 2");
 
-        var get = await client.GetFromJsonAsync<TopicResponse>($"/api/topics/{topicId}");
+        var get = await client.GetFromJsonAsync<TopicResponse>($"/api/v1/topics/{topicId}");
         get!.Status.Should().Be("CLOSED");
         get.WinningIdea.Should().NotBeNull();
         get.WinningIdea!.Title.Should().Be("Idea 2");

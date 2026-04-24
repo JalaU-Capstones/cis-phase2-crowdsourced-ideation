@@ -64,7 +64,7 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
             new AuthenticationHeaderValue("Bearer", token);
 
         // POST is protected
-        var response = await client.PostAsync("/api/topics", null);
+        var response = await client.PostAsync("/api/v1/topics", null);
 
         response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized,
             because: "a valid Phase-1-issued token must be accepted by the CIS API");
@@ -75,7 +75,7 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var client   = _factory.CreateClient();
         // POST is protected
-        var response = await client.PostAsync("/api/topics", null);
+        var response = await client.PostAsync("/api/v1/topics", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
             because: "requests without a token must be rejected");
@@ -92,7 +92,7 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
             new AuthenticationHeaderValue("Bearer", expiredToken);
 
         // POST is protected
-        var response = await client.PostAsync("/api/topics", null);
+        var response = await client.PostAsync("/api/v1/topics", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
             because: "expired tokens must be rejected");
@@ -106,7 +106,7 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
             new AuthenticationHeaderValue("Bearer", "this.is.not.a.valid.jwt");
 
         // POST is protected
-        var response = await client.PostAsync("/api/topics", null);
+        var response = await client.PostAsync("/api/v1/topics", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
             because: "malformed tokens must be rejected");
@@ -124,7 +124,7 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
             new AuthenticationHeaderValue("Bearer", wrongToken);
 
         // POST is protected
-        var response = await client.PostAsync("/api/topics", null);
+        var response = await client.PostAsync("/api/v1/topics", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
             because: "tokens signed with an unknown key must be rejected");

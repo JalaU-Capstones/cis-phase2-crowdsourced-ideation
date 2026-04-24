@@ -34,11 +34,8 @@ docker ps
 ```
 
 Connection details:
-- **Host**: `localhost`
-- **Port**: `3307`
-- **Database**: `sd3`
-- **User**: `sd3user`
-- **Password**: `sd3pass`
+- **MySQL (V1)**: `localhost:3307`
+- **MongoDB (V2)**: `localhost:27017`
 
 ## 4. Running the Application
 ```bash
@@ -47,9 +44,18 @@ dotnet run --project src/CIS-Phase2-Crowdsourced-Ideation
 ```
 
 The API will be available at `http://localhost:5257`.
-Swagger UI (Development only): `http://localhost:5257/swagger`
+Swagger UI: `http://localhost:5257/swagger`
 
-## 5. Authentication
+## 5. API Versioning and Dual Persistence
+
+The API implements versioning to support different persistence layers (US 1.1):
+
+- **V1** (`/api/v1/*`): Uses **MySQL** persistence.
+- **V2** (`/api/v2/*`): Uses **MongoDB** persistence.
+
+Persistence adapters are automatically resolved based on the route version.
+
+## 6. Authentication
 
 This API uses **JWT Bearer Token** authentication delegated from the Phase 1 User Management API. To obtain a token:
 
@@ -64,447 +70,407 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
          }'
 ```
 
-3. Copy the returned token and use it in the `Authorization: Bearer <token>` header for protected Topics endpoints.
+3. Copy the returned token and use it in the `Authorization: Bearer <token>` header for protected endpoints.
 
-## 6. Testing the API
+## 7. API Examples (V1 - MySQL)
 
-GET operations on `/topics` are **public**. All write operations (POST, PUT, DELETE) require a valid JWT token. Ownership rules apply to PUT and DELETE.
-
-### 6.0. Note About Legacy Database Schema and HATEOAS
-
-The local MySQL schema is defined in `init.sql` and is treated as legacy-compatible.
-
-- Topic columns map 1:1 to the API model.
-- Ideas are stored in the `ideas` table with a single `content` (TEXT) column. The API still exposes `title`, `description`, and `isWinning`; these fields are serialized into `ideas.content` as JSON so the public API contract remains unchanged.
-
-If you inspect the database directly, expect `ideas.content` to look like:
-```json
-{"title":"My Idea","description":"Some details","isWinning":false}
-```
-
-#### HATEOAS Links
-All main resource responses (Topics, Ideas, Votes) include a `_links` property. This follows the HATEOAS (Hypermedia as the Engine of Application State) principle, allowing clients to discover related actions and resources dynamically based on the current state of the resource.
-
-Ideas endpoints:
-- `GET /api/ideas` and `GET /api/ideas/{id}` are **public** (no JWT required).
-- `GET /api/ideas/topic/{topicId}` is **public** and returns all ideas for a given topic (or `[]` if none).
-- All write operations on `/api/ideas` require JWT, and only the owner can update/delete their idea.
-- You cannot create an idea for a `CLOSED` topic (403 Forbidden).
-- If the related topic is `CLOSED`, updating or deleting an idea returns `403 Forbidden` with: `This topic is closed. No modifications allowed.`
-
-### 6.1. POST /api/topics — Create a Topic
+### 7.1. POST /api/v1/topics — Create a Topic
 ```bash
 TOKEN="your_jwt_token_here"
 
-curl -X POST http://localhost:5257/api/topics \
+curl -X POST http://localhost:5257/api/v1/topics \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
-           "title": "My First Topic",
-           "description": "A topic for new ideas"
+           "title": "V1 Topic",
+           "description": "Stored in MySQL"
          }'
 ```
 
-**Expected Response (201 Created):**
+### 7.2. GET /api/v1/topics — Get All Topics
+```bash
+curl http://localhost:5257/api/v1/topics
+```
+
+## 8. API Examples (V2 - MongoDB)
+
+### 8.1. POST /api/v2/topics — Create a Topic
+```bash
+TOKEN="your_jwt_token_here"
+
+curl -X POST http://localhost:5257/api/v2/topics \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "title": "V2 Topic",
+           "description": "Stored in MongoDB"
+         }'
+```
+
+### 8.2. GET /api/v2/topics — Get All Topics
+```bash
+curl http://localhost:5257/api/v2/topics
+```
+
+## 9. Business Rules & HATEOAS
+
+- **HATEOAS Links**: All responses include `_links`. These links are **dynamic** and point to the same API version as the request (e.g., V2 resources will have V2 links).
+- **Winning Idea**: Automatically calculated when a topic is `CLOSED`.
+- **Ownership**: Only the owner can `PUT` or `DELETE` resources.
+- **Cascading Delete**: Deleting a topic deletes all its ideas and votes.
+
+## 10. Running Tests
+```bash
+dotnet test
+```
+
+## 11. Complete API Examples (V1 + V2) with HATEOAS `_links`
+
+Notes:
+- All read endpoints are public unless explicitly marked as authenticated.
+- All write endpoints require `Authorization: Bearer $TOKEN`.
+- All resource responses include `_links` and these links stay in the same API version (`/api/v1/*` links in v1 responses, `/api/v2/*` links in v2 responses).
+
+### 11.1. Topics
+
+Create a topic (Authenticated):
+```bash
+TOKEN="your_jwt_token_here"
+
+# V1 (MySQL)
+curl -X POST http://localhost:5257/api/v1/topics \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "V1 Topic", "description": "Stored in MySQL" }'
+
+# V2 (MongoDB)
+curl -X POST http://localhost:5257/api/v2/topics \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "V2 Topic", "description": "Stored in MongoDB" }'
+```
+
+Example response (201 Created):
 ```json
 {
-  "id": "generated-uuid",
-  "title": "My First Topic",
-  "description": "A topic for new ideas",
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "title": "V2 Topic",
+  "description": "Stored in MongoDB",
   "status": "OPEN",
-  "ownerId": "user-uuid",
-  "createdAt": "2026-03-30T00:00:00Z",
-  "updatedAt": "2026-03-30T00:00:00Z",
+  "ownerId": "550e8400-e29b-41d4-a716-446655440001",
+  "createdAt": "2026-03-30T10:00:00Z",
+  "updatedAt": "2026-03-30T10:00:00Z",
   "winningIdea": null,
   "_links": [
-    { "href": "api/topics/generated-uuid", "method": "GET", "rel": "self" },
-    { "href": "api/ideas/topic/generated-uuid", "method": "GET", "rel": "ideas" },
-    { "href": "api/topics/generated-uuid", "method": "PUT", "rel": "update" },
-    { "href": "api/topics/generated-uuid", "method": "DELETE", "rel": "delete" }
+    { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "self" },
+    { "href": "api/v2/ideas/topic/550e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "ideas" },
+    { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "PUT", "rel": "update" },
+    { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "DELETE", "rel": "delete" }
   ]
 }
 ```
 
-### 6.2. GET /api/topics — Get All Topics (Public)
-
-Supports pagination, filtering and sorting via query parameters.
-
-| Parameter | Default | Valid values | Error |
-|-----------|---------|--------------|-------|
-| `page` | `0` | `>= 0` integer | `400` |
-| `size` | `10` | `>= 1` integer | `400` |
-| `status` | *(none)* | `OPEN`, `CLOSED` | `400` |
-| `ownerId` | *(none)* | any string | — |
-| `sortBy` | `createdAt` | `createdAt`, `title`, `updatedAt` | `400` |
-| `order` | `desc` | `asc`, `desc` | `400` |
-
+Get all topics (Public):
 ```bash
-# Default (no params)
-curl http://localhost:5257/api/topics
+# V1
+curl "http://localhost:5257/api/v1/topics?page=0&size=10&status=OPEN&sortBy=createdAt&order=desc"
 
-# With pagination
-curl "http://localhost:5257/api/topics?page=0&size=5"
-
-# With filtering
-curl "http://localhost:5257/api/topics?status=OPEN"
-curl "http://localhost:5257/api/topics?ownerId=user-uuid"
-
-# With sorting
-curl "http://localhost:5257/api/topics?sortBy=title&order=asc"
-
-# Combined
-curl "http://localhost:5257/api/topics?page=0&size=5&status=OPEN&sortBy=createdAt&order=desc"
+# V2
+curl "http://localhost:5257/api/v2/topics?page=0&size=10&status=OPEN&sortBy=createdAt&order=desc"
 ```
 
-**Expected Response (200 OK):**
+Get a topic by id (Public):
+```bash
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/topics/$TOPIC_ID"
+
+# V2
+curl "http://localhost:5257/api/v2/topics/$TOPIC_ID"
+```
+
+Update a topic (Owner only):
+```bash
+TOKEN="your_jwt_token_here"
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X PUT "http://localhost:5257/api/v1/topics/$TOPIC_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "Updated Title", "description": "Updated description", "status": "CLOSED" }'
+
+# V2
+curl -X PUT "http://localhost:5257/api/v2/topics/$TOPIC_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "Updated Title", "description": "Updated description", "status": "CLOSED" }'
+```
+
+Delete a topic (Owner only):
+```bash
+TOKEN="your_jwt_token_here"
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X DELETE "http://localhost:5257/api/v1/topics/$TOPIC_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+# V2
+curl -X DELETE "http://localhost:5257/api/v2/topics/$TOPIC_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 11.2. Ideas
+
+Create an idea (Authenticated):
+```bash
+TOKEN="your_jwt_token_here"
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X POST http://localhost:5257/api/v1/ideas \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "topicId": "'"$TOPIC_ID"'", "title": "My Idea", "description": "Some details" }'
+
+# V2
+curl -X POST http://localhost:5257/api/v2/ideas \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "topicId": "'"$TOPIC_ID"'", "title": "My Idea", "description": "Some details" }'
+```
+
+Example response (201 Created):
 ```json
 {
-  "data": [
-    {
-      "id": "generated-uuid",
-      "title": "My First Topic",
-      "description": "A topic for new ideas",
-      "status": "OPEN",
-      "ownerId": "user-uuid",
-      "createdAt": "2026-03-30T00:00:00Z",
-      "updatedAt": "2026-03-30T00:00:00Z",
-      "winningIdea": null,
-      "_links": [
-        { "href": "api/topics/generated-uuid", "method": "GET", "rel": "self" },
-        { "href": "api/ideas/topic/generated-uuid", "method": "GET", "rel": "ideas" },
-        { "href": "api/topics/generated-uuid", "method": "PUT", "rel": "update" },
-        { "href": "api/topics/generated-uuid", "method": "DELETE", "rel": "delete" }
-      ]
-    }
-  ],
-  "currentPage": 0,
-  "pageSize": 5,
-  "totalItems": 1,
-  "totalPages": 1
-}
-```
-
-**Expected Response (400 Bad Request):** Invalid pagination, filter or sort parameters.
-```json
-{ "error": "sortBy must be one of: createdAt, title, updatedAt." }
-```
-
-### 6.3. GET /api/topics/{id} — Get Topic by ID (Public)
-```bash
-TOPIC_ID="generated-uuid"
-
-curl http://localhost:5257/api/topics/$TOPIC_ID
-```
-
-**Expected Response (200 OK):** Topic object including `_links`.
-**Expected Response (404 Not Found):** Topic does not exist.
-
-### 6.4. PUT /api/topics/{id} — Update a Topic (Owner only)
-```bash
-TOKEN="your_jwt_token_here"
-TOPIC_ID="generated-uuid"
-
-curl -X PUT http://localhost:5257/api/topics/$TOPIC_ID \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "title": "Updated Title",
-           "description": "Updated description",
-           "status": "CLOSED"
-         }'
-```
-
-**Expected Response (200 OK):** Updated topic object with HATEOAS links (including `winner` link if status is `CLOSED`).
-**Expected Response (404 Not Found):** Topic does not exist.
-**Expected Response (403 Forbidden):** You are not authorized to modify this topic.
-**Expected Response (400 Bad Request):** Invalid data.
-
-Note: If you update a topic and set `status` to `CLOSED`, the response includes an `X-Info` header indicating the topic cannot be reopened. Once closed, attempts to set `status` back to `OPEN` will return `400 Bad Request`.
-When a topic is `CLOSED`, `GET /api/topics` and `GET /api/topics/{id}` will include `winningIdea` if an idea is marked with `isWinning=true`.
-
-### 6.5. DELETE /api/topics/{id} — Delete a Topic (Owner only)
-```bash
-TOKEN="your_jwt_token_here"
-TOPIC_ID="generated-uuid"
-
-curl -X DELETE http://localhost:5257/api/topics/$TOPIC_ID \
-     -H "Authorization: Bearer $TOKEN"
-```
-
-**Expected Response (200 OK):** A confirmation message indicating the topic (and all related ideas/votes) were deleted.
-**Expected Response (404 Not Found):** Topic does not exist.
-**Expected Response (403 Forbidden):** You are not authorized to modify this topic.
-
-### 6.6. POST /api/ideas — Create an Idea (Authenticated)
-```bash
-TOKEN="your_jwt_token_here"
-TOPIC_ID="generated-uuid"
-
-curl -X POST http://localhost:5257/api/ideas \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "topicId": "'"$TOPIC_ID"'",
-           "title": "My Idea",
-           "description": "Some details"
-         }'
-```
-
-**Expected Response (201 Created):**
-```json
-{
-  "id": "idea-uuid",
-  "topicId": "topic-uuid",
-  "ownerId": "user-uuid",
+  "id": "660e8400-e29b-41d4-a716-446655440000",
+  "topicId": "550e8400-e29b-41d4-a716-446655440000",
+  "ownerId": "550e8400-e29b-41d4-a716-446655440001",
   "title": "My Idea",
   "description": "Some details",
   "createdAt": "2026-03-30T11:00:00Z",
   "updatedAt": "2026-03-30T11:00:00Z",
   "isWinning": false,
   "_links": [
-    { "href": "api/ideas/idea-uuid", "method": "GET", "rel": "self" },
-    { "href": "api/topics/topic-uuid", "method": "GET", "rel": "topic" },
-    { "href": "api/votes/idea/idea-uuid", "method": "GET", "rel": "votes" },
-    { "href": "api/ideas/idea-uuid", "method": "PUT", "rel": "update" },
-    { "href": "api/ideas/idea-uuid", "method": "DELETE", "rel": "delete" },
-    { "href": "api/votes", "method": "POST", "rel": "vote" }
+    { "href": "api/v2/ideas/660e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "self" },
+    { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "topic" },
+    { "href": "api/v2/votes/idea/660e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "votes" },
+    { "href": "api/v2/ideas/660e8400-e29b-41d4-a716-446655440000", "method": "PUT", "rel": "update" },
+    { "href": "api/v2/ideas/660e8400-e29b-41d4-a716-446655440000", "method": "DELETE", "rel": "delete" },
+    { "href": "api/v2/votes", "method": "POST", "rel": "vote" }
   ]
 }
 ```
 
-### 6.6a. GET /api/ideas/topic/{topicId} — Get Ideas by Topic (Public)
+Get all ideas (Public):
 ```bash
-TOPIC_ID="generated-uuid"
+# V1
+curl "http://localhost:5257/api/v1/ideas?page=0&size=10&sortBy=updatedAt&order=desc"
 
-curl http://localhost:5257/api/ideas/topic/$TOPIC_ID
+# V2
+curl "http://localhost:5257/api/v2/ideas?page=0&size=10&sortBy=updatedAt&order=desc"
 ```
 
-**Expected Response (200 OK):** An array of ideas including `_links`. If the topic does not exist (or has no ideas), the response is `[]`.
-
-### 6.6b. GET /api/ideas — Get All Ideas (Public)
-
-Supports pagination and sorting via query parameters.
-
-| Parameter | Default | Valid values | Error |
-|-----------|---------|--------------|-------|
-| `page` | `0` | `>= 0` integer | `400` |
-| `size` | `10` | `>= 1` integer | `400` |
-| `sortBy` | `updatedAt` | `updatedAt` | `400` |
-| `order` | `desc` | `asc`, `desc` | `400` |
-
+Get an idea by id (Public):
 ```bash
-# Default (no params)
-curl http://localhost:5257/api/ideas
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
 
-# With pagination
-curl "http://localhost:5257/api/ideas?page=0&size=5"
+# V1
+curl "http://localhost:5257/api/v1/ideas/$IDEA_ID"
 
-# With sorting
-curl "http://localhost:5257/api/ideas?sortBy=updatedAt&order=asc"
-
-# Combined
-curl "http://localhost:5257/api/ideas?page=0&size=5&sortBy=updatedAt&order=desc"
+# V2
+curl "http://localhost:5257/api/v2/ideas/$IDEA_ID"
 ```
 
-**Expected Response (200 OK):**
-```json
-{
-  "data": [
-    {
-      "id": "generated-uuid",
-      "topicId": "topic-uuid",
-      "ownerId": "user-uuid",
-      "title": "My Idea",
-      "description": "Some details",
-      "createdAt": "2026-03-30T11:00:00Z",
-      "updatedAt": "2026-03-30T11:30:00Z",
-      "isWinning": false,
-      "_links": [
-        { "href": "api/ideas/generated-uuid", "method": "GET", "rel": "self" },
-        { "href": "api/topics/topic-uuid", "method": "GET", "rel": "topic" },
-        { "href": "api/votes/idea/generated-uuid", "method": "GET", "rel": "votes" },
-        { "href": "api/ideas/generated-uuid", "method": "PUT", "rel": "update" },
-        { "href": "api/ideas/generated-uuid", "method": "DELETE", "rel": "delete" },
-        { "href": "api/votes", "method": "POST", "rel": "vote" }
-      ]
-    }
-  ],
-  "currentPage": 0,
-  "pageSize": 5,
-  "totalItems": 1,
-  "totalPages": 1
-}
+Get ideas by topic (Public):
+```bash
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/ideas/topic/$TOPIC_ID"
+
+# V2
+curl "http://localhost:5257/api/v2/ideas/topic/$TOPIC_ID"
 ```
 
-**Expected Response (400 Bad Request):** Invalid pagination or sort parameters.
-```json
-{ "error": "order must be 'asc' or 'desc'." }
-```
-
-### 6.7. PUT /api/ideas/{id} — Update an Idea (Owner only)
+Update an idea (Owner only):
 ```bash
 TOKEN="your_jwt_token_here"
-IDEA_ID="generated-uuid"
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
 
-curl -X PUT http://localhost:5257/api/ideas/$IDEA_ID \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "title": "Updated title",
-           "description": "Updated description"
-         }'
+# V1
+curl -X PUT "http://localhost:5257/api/v1/ideas/$IDEA_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "Updated title", "description": "Updated description" }'
+
+# V2
+curl -X PUT "http://localhost:5257/api/v2/ideas/$IDEA_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "title": "Updated title", "description": "Updated description" }'
 ```
 
-**Expected Response (200 OK):** Updated idea object including `_links`.
-
-### 6.8. DELETE /api/ideas/{id} — Delete an Idea (Owner only)
+Delete an idea (Owner only):
 ```bash
 TOKEN="your_jwt_token_here"
-IDEA_ID="generated-uuid"
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
 
-curl -X DELETE http://localhost:5257/api/ideas/$IDEA_ID \
-     -H "Authorization: Bearer $TOKEN"
+# V1
+curl -X DELETE "http://localhost:5257/api/v1/ideas/$IDEA_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+# V2
+curl -X DELETE "http://localhost:5257/api/v2/ideas/$IDEA_ID" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-**Expected Response (200 OK):** A confirmation message indicating the idea (and all related votes) were deleted.
-**Expected Response (404 Not Found):** Idea does not exist.
-**Expected Response (403 Forbidden):** You are not authorized to modify this idea, or the topic is closed.
+### 11.3. Votes
 
-## 6.9. Votes (US 2.2)
-
-Votes allow authenticated users to vote on one or more ideas of the same topic. A user can only vote once per idea (enforced by a unique constraint in the database).
-
-Important rules:
-- `GET` vote endpoints are **public** (no JWT required).
-- `POST/PUT/DELETE` vote endpoints require JWT.
-- If the idea's topic is `CLOSED`, voting (create/update/delete) is forbidden and returns `403 Forbidden` with: `This topic is closed. Voting is no longer allowed.`
-- Only the owner of a vote can modify/delete it; otherwise returns `403 Forbidden` with: `You can only modify or delete your own vote.`
-
-### 6.9.1. GET /api/votes — Get All Votes (Public)
+Cast a vote (Authenticated):
 ```bash
-curl http://localhost:5257/api/votes
+TOKEN="your_jwt_token_here"
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl -X POST http://localhost:5257/api/v1/votes \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "ideaId": "'"$IDEA_ID"'" }'
+
+# V2
+curl -X POST http://localhost:5257/api/v2/votes \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "ideaId": "'"$IDEA_ID"'" }'
 ```
 
-**Expected Response (200 OK):** Array of vote objects including `_links`.
-
-### 6.9.2. GET /api/votes/idea/{ideaId} — Get Votes for an Idea (Public)
-```bash
-IDEA_ID="generated-uuid"
-curl http://localhost:5257/api/votes/idea/$IDEA_ID
-```
-
-### 6.9.3. GET /api/votes/{voteId} — Get a Vote by ID (Public)
-```bash
-VOTE_ID="generated-uuid"
-curl http://localhost:5257/api/votes/$VOTE_ID
-```
-
-**Expected Response (200 OK):**
+Example response (201 Created):
 ```json
 {
-  "id": "vote-uuid",
-  "ideaId": "idea-uuid",
-  "ideaTitle": "Implement dark mode",
-  "topicId": "topic-uuid",
-  "topicTitle": "Dashboard improvements",
+  "id": "770e8400-e29b-41d4-a716-446655440000",
+  "ideaId": "660e8400-e29b-41d4-a716-446655440000",
+  "ideaTitle": "My Idea",
+  "topicId": "550e8400-e29b-41d4-a716-446655440000",
+  "topicTitle": "V2 Topic",
   "_links": [
-    { "href": "api/votes/idea/idea-uuid", "method": "GET", "rel": "self" },
-    { "href": "api/ideas/idea-uuid", "method": "GET", "rel": "idea" },
-    { "href": "api/votes/vote-uuid", "method": "DELETE", "rel": "remove" }
+    { "href": "api/v2/votes/idea/660e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "self" },
+    { "href": "api/v2/ideas/660e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "idea" },
+    { "href": "api/v2/votes/770e8400-e29b-41d4-a716-446655440000", "method": "DELETE", "rel": "remove" }
   ]
 }
 ```
 
-### 6.9.4. POST /api/votes — Cast a Vote (Authenticated)
+Get all votes (Public):
+```bash
+# V1
+curl "http://localhost:5257/api/v1/votes"
+
+# V2
+curl "http://localhost:5257/api/v2/votes"
+```
+
+Get votes by idea (Public):
+```bash
+IDEA_ID="660e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/votes/idea/$IDEA_ID"
+
+# V2
+curl "http://localhost:5257/api/v2/votes/idea/$IDEA_ID"
+```
+
+Get vote by id (Public):
+```bash
+VOTE_ID="770e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/votes/$VOTE_ID"
+
+# V2
+curl "http://localhost:5257/api/v2/votes/$VOTE_ID"
+```
+
+Update a vote (Owner only):
 ```bash
 TOKEN="your_jwt_token_here"
-IDEA_ID="generated-uuid"
+VOTE_ID="770e8400-e29b-41d4-a716-446655440000"
+NEW_IDEA_ID="880e8400-e29b-41d4-a716-446655440000"
 
-curl -X POST http://localhost:5257/api/votes \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "ideaId": "'"$IDEA_ID"'"
-         }'
+# V1
+curl -X PUT "http://localhost:5257/api/v1/votes/$VOTE_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "ideaId": "'"$NEW_IDEA_ID"'" }'
+
+# V2
+curl -X PUT "http://localhost:5257/api/v2/votes/$VOTE_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "ideaId": "'"$NEW_IDEA_ID"'" }'
 ```
 
-**Expected Response (201 Created):** Vote object including `_links`.
-
-### 6.9.5. PUT /api/votes/{voteId} — Update a Vote (Owner only)
-This endpoint updates the vote to point to a different idea. If you already voted for the target idea, the API returns `409 Conflict`.
+Delete a vote (Owner only):
 ```bash
 TOKEN="your_jwt_token_here"
-VOTE_ID="generated-uuid"
-NEW_IDEA_ID="generated-uuid"
+VOTE_ID="770e8400-e29b-41d4-a716-446655440000"
 
-curl -X PUT http://localhost:5257/api/votes/$VOTE_ID \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{
-           "ideaId": "'"$NEW_IDEA_ID"'"
-         }'
+# V1
+curl -X DELETE "http://localhost:5257/api/v1/votes/$VOTE_ID" \
+  -H "Authorization: Bearer $TOKEN"
+
+# V2
+curl -X DELETE "http://localhost:5257/api/v2/votes/$VOTE_ID" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-**Expected Response (200 OK):** Updated vote object including `_links`.
+### 11.4. Statistics
 
-### 6.9.6. DELETE /api/votes/{voteId} — Delete a Vote (Owner only)
+Top topics (Public):
 ```bash
-TOKEN="your_jwt_token_here"
-VOTE_ID="generated-uuid"
+# V1
+curl "http://localhost:5257/api/v1/statistics/top-topics?limit=10&offset=0"
 
-curl -X DELETE http://localhost:5257/api/votes/$VOTE_ID \
-     -H "Authorization: Bearer $TOKEN"
+# V2
+curl "http://localhost:5257/api/v2/statistics/top-topics?limit=10&offset=0"
 ```
 
-**Expected Response (200 OK):** A confirmation message.
+Example response (200 OK):
+```json
+[
+  {
+    "topicId": "550e8400-e29b-41d4-a716-446655440000",
+    "topicTitle": "V2 Topic",
+    "status": "OPEN",
+    "ideasCount": 3,
+    "votesCount": 12,
+    "_links": [
+      { "href": "api/v2/topics/550e8400-e29b-41d4-a716-446655440000", "method": "GET", "rel": "topic" },
+      { "href": "api/v2/statistics/topic/550e8400-e29b-41d4-a716-446655440000/summary", "method": "GET", "rel": "summary" }
+    ]
+  }
+]
+```
 
-## 6.10. Statistics (US 3.3) (Public)
-
-All statistics endpoints are **public** (no JWT required) and support pagination where applicable.
-
-### 6.10.1. GET /api/statistics/top-topics?limit=10&offset=0
-Returns topics ordered by total votes across all ideas in the topic (descending).
+Most voted ideas (Public):
 ```bash
-curl "http://localhost:5257/api/statistics/top-topics?limit=10&offset=0"
+# V1
+curl "http://localhost:5257/api/v1/statistics/most-voted-ideas?limit=10&offset=0"
+
+# V2
+curl "http://localhost:5257/api/v2/statistics/most-voted-ideas?limit=10&offset=0"
 ```
 
-### 6.10.2. GET /api/statistics/most-voted-ideas?limit=10&offset=0
-Returns ideas ordered by vote count (descending), including the idea's topic details.
+Topic summary (Public):
 ```bash
-curl "http://localhost:5257/api/statistics/most-voted-ideas?limit=10&offset=0"
+TOPIC_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# V1
+curl "http://localhost:5257/api/v1/statistics/topic/$TOPIC_ID/summary"
+
+# V2
+curl "http://localhost:5257/api/v2/statistics/topic/$TOPIC_ID/summary"
 ```
-
-### 6.10.3. GET /api/statistics/topic/{topicId}/summary
-Returns aggregated statistics for a single topic.
-```bash
-TOPIC_ID="generated-uuid"
-curl "http://localhost:5257/api/statistics/topic/$TOPIC_ID/summary"
-```
-
-## 7. Running Tests
-```bash
-dotnet test
-```
-
-To generate a coverage report:
-```bash
-dotnet clean
-rm -rf test/TestResults coverage-report
-dotnet test --collect:"XPlat Code Coverage" --results-directory test/TestResults
-dotnet tool restore
-dotnet tool run reportgenerator \
-  -reports:"test/TestResults/**/coverage.cobertura.xml" \
-  -targetdir:"coverage-report" \
-  -reporttypes:Html
-```
-
-Open `coverage-report/index.html` to view the report.
-
-## 8. Common Issues
-
-- **401 Unauthorized**: Verify your token is valid and not expired. Check the `Authorization: Bearer <token>` header format.
-- **403 Forbidden**: You are trying to update or delete a topic that was created by another user.
-- **404 Not Found on Topics**: Ensure the topic ID exists in the database.
-- **400 Bad Request**: Check that `title` is not empty and does not exceed 200 characters. For updates, `status` must be `OPEN` or `CLOSED`.
-- **Database Connection Error**: Ensure the Docker container `cis-mysql-phase1` is running on port `3307`.
-- **Port Conflict**: If port `5257` is in use, check `launchSettings.json` to update the port.

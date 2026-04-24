@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>CIS.Phase2.CrowdsourcedIdeation</AssemblyName>
     <RootNamespace>CIS.Phase2.CrowdsourcedIdeation</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +19,8 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.16" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.16" />
+    <PackageReference Include="MongoDB.Driver" Version="3.7.1" />
     <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="8.0.3" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="JunitXml.TestLogger" Version="4.1.0" />

@@ -1,8 +1,7 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
-using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS.Phase2.CrowdsourcedIdeation.Features;
-using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
@@ -17,38 +16,20 @@ public interface IIdeaService
     Task<bool> DeleteIdeaAsync(Guid id, ClaimsPrincipal user);
 }
 
-public class IdeaService(AppDbContext context) : IIdeaService
+public class IdeaService(IRepositoryAdapter adapter, string version = "v1") : IIdeaService
 {
     private static readonly string[] ValidSortFields = ["updatedAt"];
     private static readonly string[] ValidOrders = ["asc", "desc"];
     private async Task<Guid> ResolveUserIdAsync(ClaimsPrincipal user)
     {
-        var raw = user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(raw))
-            throw new UnauthorizedAccessException("User identity not found or invalid");
-
-        // Tests and some JWT setups provide the user id directly as a GUID.
-        if (Guid.TryParse(raw, out var userId))
-            return userId;
-
-        // Phase 1 integration typically provides login/subject; map to DB user record to get the GUID id.
-        var dbUser = await context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Login == raw);
-        if (dbUser is null || !Guid.TryParse(dbUser.Id, out userId))
-            throw new UnauthorizedAccessException("User identity not found or invalid");
-
-        return userId;
+        return await UserIdentityResolver.ResolveOrProvisionUserIdAsync(adapter, user);
     }
 
     public async Task<IdeaResponse> CreateIdeaAsync(CreateIdeaRequest request, ClaimsPrincipal user)
     {
         var userId = await ResolveUserIdAsync(user);
         
-        var topic = await context.Topics
-            .AsNoTracking()
-            .Where(t => t.Id == request.TopicId)
-            .Select(t => new { t.Id, t.Status })
-            .FirstOrDefaultAsync();
-
+        var topic = await adapter.Topics.GetByIdAsync(request.TopicId);
         if (topic is null)
         {
              throw new ArgumentException("Topic not found");
@@ -71,8 +52,8 @@ public class IdeaService(AppDbContext context) : IIdeaService
             IsWinning = false
         };
 
-        context.Set<Idea>().Add(idea);
-        await context.SaveChangesAsync();
+        await adapter.Ideas.AddAsync(idea);
+        await adapter.SaveChangesAsync();
 
         // Topic is OPEN at this point (CLOSED would have thrown above).
         return MapToResponse(idea, topicIsOpen: true);
@@ -80,17 +61,13 @@ public class IdeaService(AppDbContext context) : IIdeaService
 
     public async Task<IdeaResponse?> GetIdeaByIdAsync(Guid id)
     {
-        var idea = await context.Set<Idea>().FindAsync(id);
+        var idea = await adapter.Ideas.GetByIdAsync(id);
         if (idea is null) return null;
 
         // Fetch topic status to determine whether to include the 'vote' link 
-        var topicStatus = await context.Topics
-            .AsNoTracking()
-            .Where(t => t.Id == idea.TopicId)
-            .Select(t => (TopicStatus?)t.Status)
-            .FirstOrDefaultAsync();
+        var topic = await adapter.Topics.GetByIdAsync(idea.TopicId);
 
-        return MapToResponse(idea, topicIsOpen: topicStatus == TopicStatus.OPEN);
+        return MapToResponse(idea, topicIsOpen: topic?.Status == TopicStatus.OPEN);
     }
 
     public async Task<PagedResponse<IdeaResponse>> GetAllIdeasAsync(int? page, int? size, string? sortBy, string? order)
@@ -113,8 +90,9 @@ public class IdeaService(AppDbContext context) : IIdeaService
         if (!ValidOrders.Contains(sortOrder))
         throw new ArgumentException($"order must be 'asc' or 'desc'.");
 
-        // 3. Query base
-        var query = context.Set<Idea>().AsNoTracking().AsQueryable();
+        // For simplicity, get all and sort in memory. In production, implement sorting in repo.
+        var allIdeas = await adapter.Ideas.GetAllAsync();
+        var query = allIdeas.AsQueryable();
 
         // 4. Apply sorting
         query = (sortField, sortOrder) switch
@@ -124,23 +102,23 @@ public class IdeaService(AppDbContext context) : IIdeaService
         };
 
         // 5. Count total BEFORE pagination
-        var totalItems = await query.CountAsync();
+        var totalItems = query.Count();
         var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize);
 
-        // 6. Aplly pagination
-        var ideas = await query
+        // 6. Apply pagination
+        var ideas = query
             .Skip(currentPage * pageSize)
             .Take(pageSize)
-            .ToListAsync();
+            .ToList();
 
         // 7. Batch-fetch topic statuses to build HATEOAS links (US 3.2) without N+1 queries.
         var topicIds = ideas.Select(i => i.TopicId).Distinct().ToList();
-        var topicStatuses = topicIds.Count > 0
-            ? await context.Topics
-                .AsNoTracking()
-                .Where(t => topicIds.Contains(t.Id))
-                .ToDictionaryAsync(t => t.Id, t => t.Status)
-            : new Dictionary<string, TopicStatus>();
+        var topicStatuses = new Dictionary<string, TopicStatus>();
+        foreach (var tid in topicIds)
+        {
+            var t = await adapter.Topics.GetByIdAsync(tid);
+            if (t != null) topicStatuses[tid] = t.Status;
+        }
 
         return new PagedResponse<IdeaResponse>(
             Data:        ideas.Select(i =>
@@ -154,41 +132,23 @@ public class IdeaService(AppDbContext context) : IIdeaService
 
     public async Task<IEnumerable<IdeaResponse>> GetIdeasByTopicIdAsync(string topicId)
     {
-        var ideas = await context.Set<Idea>()
-            .AsNoTracking()
-            .Where(i => i.TopicId == topicId)
-            .ToListAsync();
+        var ideas = await adapter.Ideas.GetByTopicIdAsync(topicId);
 
         // Fetch topic status once for the whole set (US 3.2).
-        var topicStatus = await context.Topics
-            .AsNoTracking()
-            .Where(t => t.Id == topicId)
-            .Select(t => (TopicStatus?)t.Status)
-            .FirstOrDefaultAsync();
+        var topic = await adapter.Topics.GetByIdAsync(topicId);
 
-        var isOpen = topicStatus == TopicStatus.OPEN;
+        var isOpen = topic?.Status == TopicStatus.OPEN;
         return ideas.Select(i => MapToResponse(i, topicIsOpen: isOpen));
     }
 
     public async Task<IdeaResponse?> UpdateIdeaAsync(Guid id, UpdateIdeaRequest request, ClaimsPrincipal user)
     {
-        // Avoid side-effects when the same DbContext instance already tracks the entity (unit tests reuse the context).
-        var tracked = context.ChangeTracker.Entries<Idea>().FirstOrDefault(e => e.Entity.Id == id);
-        if (tracked is not null)
-        {
-            tracked.State = EntityState.Detached;
-        }
-
-        var idea = await context.Set<Idea>().FindAsync(id);
+        var idea = await adapter.Ideas.GetByIdAsync(id);
         if (idea == null) return null;
 
         // Topic closed protection: updates are forbidden when the topic is CLOSED.
-        var topicStatus = await context.Topics
-            .AsNoTracking()
-            .Where(t => t.Id == idea.TopicId)
-            .Select(t => t.Status)
-            .FirstOrDefaultAsync();
-        if (topicStatus == TopicStatus.CLOSED)
+        var topic = await adapter.Topics.GetByIdAsync(idea.TopicId);
+        if (topic?.Status == TopicStatus.CLOSED)
         {
             throw new UnauthorizedAccessException("This topic is closed. No modifications allowed.");
         }
@@ -204,7 +164,8 @@ public class IdeaService(AppDbContext context) : IIdeaService
         var now = DateTime.UtcNow;
         idea.UpdatedAt = now <= idea.UpdatedAt ? idea.UpdatedAt.AddTicks(1) : now;
 
-        await context.SaveChangesAsync();
+        await adapter.Ideas.UpdateAsync(idea);
+        await adapter.SaveChangesAsync();
 
         // Topic is OPEN at this point (CLOSED would have thrown above).
         return MapToResponse(idea, topicIsOpen: true);
@@ -212,16 +173,12 @@ public class IdeaService(AppDbContext context) : IIdeaService
 
     public async Task<bool> DeleteIdeaAsync(Guid id, ClaimsPrincipal user)
     {
-        var idea = await context.Set<Idea>().FindAsync(id);
+        var idea = await adapter.Ideas.GetByIdAsync(id);
         if (idea == null) return false;
 
         // Topic closed protection: deletes are forbidden when the topic is CLOSED.
-        var topicStatus = await context.Topics
-            .AsNoTracking()
-            .Where(t => t.Id == idea.TopicId)
-            .Select(t => t.Status)
-            .FirstOrDefaultAsync();
-        if (topicStatus == TopicStatus.CLOSED)
+        var topic = await adapter.Topics.GetByIdAsync(idea.TopicId);
+        if (topic?.Status == TopicStatus.CLOSED)
         {
             throw new UnauthorizedAccessException("This topic is closed. No modifications allowed.");
         }
@@ -232,29 +189,19 @@ public class IdeaService(AppDbContext context) : IIdeaService
             throw new UnauthorizedAccessException("You are not authorized to modify this idea");
         }
 
-        // Legacy schema note:
-        // The MySQL foreign key in init.sql does NOT specify ON DELETE CASCADE for ideas -> votes.
-        // To keep the intended behavior (deleting an idea removes its votes), delete votes first.
-        if (!context.Database.IsRelational())
+        // Delete votes first
+        var votes = await adapter.Votes.GetByIdeaIdAsync(id);
+        foreach (var vote in votes)
         {
-            var votes = await context.Votes.Where(v => v.IdeaId == id).ToListAsync();
-            context.Votes.RemoveRange(votes);
-        }
-        else
-        {
-            await context.Votes.Where(v => v.IdeaId == id).ExecuteDeleteAsync();
+            await adapter.Votes.DeleteAsync(vote);
         }
 
-        context.Set<Idea>().Remove(idea);
-        await context.SaveChangesAsync();
+        await adapter.Ideas.DeleteAsync(idea);
+        await adapter.SaveChangesAsync();
         return true;
     }
 
-    /// <summary>
-    /// Maps an Idea entity to an IdeaResponse DTO including HATEOAS links (US 3.2).
-    /// <paramref name="topicIsOpen"/> controls whether the 'vote' link is included.
-    /// </summary>
-    private static IdeaResponse MapToResponse(Idea idea, bool topicIsOpen) =>
+    private IdeaResponse MapToResponse(Idea idea, bool topicIsOpen) =>
         new IdeaResponse(
             idea.Id,
             idea.TopicId,
@@ -266,6 +213,6 @@ public class IdeaService(AppDbContext context) : IIdeaService
             idea.IsWinning
         )
         {
-            Links = HateoasBuilder.ForIdea(idea.Id, idea.TopicId, topicIsOpen)
+            Links = HateoasBuilder.ForIdea(idea.Id, idea.TopicId, topicIsOpen, version)
         };
 }

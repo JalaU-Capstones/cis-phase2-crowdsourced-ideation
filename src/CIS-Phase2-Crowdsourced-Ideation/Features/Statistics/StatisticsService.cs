@@ -1,7 +1,8 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features.Topics;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
-using Microsoft.EntityFrameworkCore;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
+using CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Statistics;
 
@@ -12,107 +13,72 @@ public interface IStatisticsService
     Task<TopicSummaryDto?> GetTopicSummaryAsync(string topicId);
 }
 
-public sealed class StatisticsService(AppDbContext db) : IStatisticsService
+public sealed class StatisticsService(IRepositoryAdapter adapter, string version = "v1") : IStatisticsService
 {
     public async Task<IReadOnlyList<TopTopicDto>> GetTopTopicsAsync(int limit, int offset)
     {
-        // Query counts in the database when possible. The final ordering/paging is done in-memory
-        // because different providers (MySql/InMemory) behave differently for some grouping scenarios.
-        var topics = await db.Topics
-            .AsNoTracking()
-            .Select(t => new { t.Id, t.Title, t.Status })
-            .ToListAsync();
-
-        if (topics.Count == 0)
+        var topics = await adapter.Topics.GetAllAsync();
+        if (!topics.Any())
             return Array.Empty<TopTopicDto>();
 
-        var ideaCounts = await db.Ideas
-            .AsNoTracking()
-            .GroupBy(i => i.TopicId)
-            .Select(g => new { TopicId = g.Key, Count = g.Count() })
-            .ToListAsync();
+        var results = new List<TopTopicDto>();
+        foreach (var t in topics)
+        {
+            var ideas = await adapter.Ideas.GetByTopicIdAsync(t.Id);
+            int totalVotes = 0;
+            foreach (var idea in ideas)
+            {
+                totalVotes += await adapter.Votes.CountByIdeaIdAsync(idea.Id);
+            }
+            results.Add(new TopTopicDto(t.Id, t.Title, t.Status.ToString(), ideas.Count(), totalVotes)
+            {
+                Links = HateoasBuilder.ForTopTopic(t.Id, version)
+            });
+        }
 
-        var voteCountsByTopic = await (
-                from v in db.Votes.AsNoTracking()
-                join i in db.Ideas.AsNoTracking() on v.IdeaId equals i.Id
-                group v by i.TopicId
-                into g
-                select new { TopicId = g.Key, Count = g.Count() }
-            )
-            .ToListAsync();
-
-        var ideaCountMap = ideaCounts.ToDictionary(x => x.TopicId, x => x.Count);
-        var voteCountMap = voteCountsByTopic.ToDictionary(x => x.TopicId, x => x.Count);
-
-        var result = topics
-            .Select(t => new TopTopicDto(
-                t.Id,
-                t.Title,
-                t.Status.ToString(),
-                ideaCountMap.GetValueOrDefault(t.Id, 0),
-                voteCountMap.GetValueOrDefault(t.Id, 0)))
+        return results
             .OrderByDescending(t => t.VotesCount)
             .ThenByDescending(t => t.IdeasCount)
             .ThenBy(t => t.TopicTitle)
             .Skip(offset)
             .Take(limit)
             .ToList();
-
-        return result;
     }
 
     public async Task<IReadOnlyList<MostVotedIdeaDto>> GetMostVotedIdeasAsync(int limit, int offset)
     {
-        // We must materialize ideas to get Title (it's derived from legacy ideas.content JSON).
-        var ideas = await db.Ideas
-            .AsNoTracking()
-            .Include(i => i.Topic)
-            .ToListAsync();
-
-        if (ideas.Count == 0)
+        var ideas = await adapter.Ideas.GetAllAsync();
+        if (!ideas.Any())
             return Array.Empty<MostVotedIdeaDto>();
 
-        var voteCounts = await db.Votes
-            .AsNoTracking()
-            .GroupBy(v => v.IdeaId)
-            .Select(g => new { IdeaId = g.Key, Count = g.Count() })
-            .ToListAsync();
+        var results = new List<MostVotedIdeaDto>();
+        foreach (var i in ideas)
+        {
+            var topic = await adapter.Topics.GetByIdAsync(i.TopicId);
+            var voteCount = await adapter.Votes.CountByIdeaIdAsync(i.Id);
+            results.Add(new MostVotedIdeaDto(i.Id, i.Title, i.TopicId, topic?.Title ?? "N/A", voteCount)
+            {
+                Links = HateoasBuilder.ForMostVotedIdea(i.Id, i.TopicId, version)
+            });
+        }
 
-        var voteCountMap = voteCounts.ToDictionary(x => x.IdeaId, x => x.Count);
-
-        var result = ideas
-            .Select(i => new MostVotedIdeaDto(
-                i.Id,
-                i.Title,
-                i.TopicId,
-                i.Topic.Title,
-                voteCountMap.GetValueOrDefault(i.Id, 0)))
+        return results
             .OrderByDescending(i => i.VotesCount)
             .ThenBy(i => i.IdeaTitle)
             .Skip(offset)
             .Take(limit)
             .ToList();
-
-        return result;
     }
 
     public async Task<TopicSummaryDto?> GetTopicSummaryAsync(string topicId)
     {
-        var topic = await db.Topics
-            .AsNoTracking()
-            .Where(t => t.Id == topicId)
-            .Select(t => new { t.Id, t.Title, t.Status })
-            .FirstOrDefaultAsync();
-
+        var topic = await adapter.Topics.GetByIdAsync(topicId);
         if (topic is null)
             return null;
 
-        var ideas = await db.Ideas
-            .AsNoTracking()
-            .Where(i => i.TopicId == topicId)
-            .ToListAsync();
-
-        var ideasCount = ideas.Count;
+        var ideas = await adapter.Ideas.GetByTopicIdAsync(topicId);
+        var ideasCount = ideas.Count();
+        
         if (ideasCount == 0)
         {
             return new TopicSummaryDto(
@@ -122,35 +88,33 @@ public sealed class StatisticsService(AppDbContext db) : IStatisticsService
                 0,
                 0,
                 WinningIdea: null,
-                MostVotedIdea: null);
+                MostVotedIdea: null)
+            {
+                Links = HateoasBuilder.ForTopicSummary(topicId, version)
+            };
         }
 
-        var ideaIds = ideas.Select(i => i.Id).ToList();
-
-        var voteCounts = await db.Votes
-            .AsNoTracking()
-            .Where(v => ideaIds.Contains(v.IdeaId))
-            .GroupBy(v => v.IdeaId)
-            .Select(g => new { IdeaId = g.Key, Count = g.Count() })
-            .ToListAsync();
-
-        var voteCountMap = voteCounts.ToDictionary(x => x.IdeaId, x => x.Count);
-        var totalVotes = voteCounts.Sum(x => x.Count);
+        int totalVotes = 0;
+        var ideaVotes = new Dictionary<Guid, int>();
+        foreach (var idea in ideas)
+        {
+            var count = await adapter.Votes.CountByIdeaIdAsync(idea.Id);
+            ideaVotes[idea.Id] = count;
+            totalVotes += count;
+        }
 
         var winning = ideas.FirstOrDefault(i => i.IsWinning);
-        IdeaBriefDto? winningDto = null;
-        if (winning is not null)
-        {
-            winningDto = new IdeaBriefDto(winning.Id, winning.Title, voteCountMap.GetValueOrDefault(winning.Id, 0));
-        }
+        IdeaBriefDto? winningDto = winning != null 
+            ? new IdeaBriefDto(winning.Id, winning.Title, ideaVotes.GetValueOrDefault(winning.Id, 0))
+            : null;
 
         var mostVoted = ideas
-            .OrderByDescending(i => voteCountMap.GetValueOrDefault(i.Id, 0))
+            .OrderByDescending(i => ideaVotes.GetValueOrDefault(i.Id, 0))
             .ThenBy(i => i.CreatedAt)
             .ThenBy(i => i.Id)
             .First();
 
-        var mostVotedDto = new IdeaBriefDto(mostVoted.Id, mostVoted.Title, voteCountMap.GetValueOrDefault(mostVoted.Id, 0));
+        var mostVotedDto = new IdeaBriefDto(mostVoted.Id, mostVoted.Title, ideaVotes.GetValueOrDefault(mostVoted.Id, 0));
 
         return new TopicSummaryDto(
             topic.Id,
@@ -159,7 +123,9 @@ public sealed class StatisticsService(AppDbContext db) : IStatisticsService
             ideasCount,
             totalVotes,
             winningDto,
-            mostVotedDto);
+            mostVotedDto)
+        {
+            Links = HateoasBuilder.ForTopicSummary(topicId, version)
+        };
     }
 }
-

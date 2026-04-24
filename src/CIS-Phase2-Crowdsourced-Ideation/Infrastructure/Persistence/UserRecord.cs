@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 
 
 [Index(nameof(Login), IsUnique = true)]
+[BsonIgnoreExtraElements]
 public sealed class UserRecord
 {
     public string Id    { get; init; } = default!;

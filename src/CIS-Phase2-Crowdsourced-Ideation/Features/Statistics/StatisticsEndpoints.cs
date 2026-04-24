@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CIS_Phase2_Crowdsourced_Ideation.Features.Statistics;
 
@@ -9,187 +11,89 @@ public static class StatisticsEndpoints
 {
     private const int DefaultLimit = 10;
 
-    public static IEndpointRouteBuilder MapStatisticsEndpoints(this IEndpointRouteBuilder endpoints)
+    public static IEndpointRouteBuilder MapStatisticsEndpoints(this IEndpointRouteBuilder endpoints, string version = "v1")
     {
-        var group = endpoints.MapGroup("/api/statistics")
+        var group = endpoints.MapGroup($"/api/{version}/statistics")
             .WithTags("Statistics");
 
-        group.MapGet("/top-topics", HandleTopTopics)
-            .WithName("GetTopTopics")
-            .WithSummary("Get top topics (public)")
-            .WithDescription("""
-                Public endpoint.
-                Returns topics ordered by total votes across all ideas in the topic (descending).
-                Supports pagination via `limit` and `offset`.
-                """)
+        group.AddEndpointFilter(async (context, next) =>
+        {
+            var adapter = version == "v2" 
+                ? (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MongoDbAdapter>()
+                : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
+            
+            context.HttpContext.Items["RepositoryAdapter"] = adapter;
+            return await next(context);
+        });
+
+        group.MapGet("/top-topics", (HttpContext http, int? limit, int? offset) =>
+                HandleTopTopics(http, limit, offset, version))
+            .WithName($"GetTopTopics_{version}")
+            .WithSummary($"Get top topics ({version})")
             .Produces<IReadOnlyList<TopTopicDto>>(StatusCodes.Status200OK)
-            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
-            .WithOpenApi(op =>
-            {
-                op.Parameters ??= new List<OpenApiParameter>();
-                op.Parameters.Add(new OpenApiParameter
-                {
-                    Name = "limit",
-                    In = ParameterLocation.Query,
-                    Required = false,
-                    Description = "Max number of records to return (default 10). Must be > 0.",
-                    Schema = new OpenApiSchema { Type = "integer", Default = new OpenApiInteger(DefaultLimit) }
-                });
-                op.Parameters.Add(new OpenApiParameter
-                {
-                    Name = "offset",
-                    In = ParameterLocation.Query,
-                    Required = false,
-                    Description = "Records to skip (default 0). Must be >= 0.",
-                    Schema = new OpenApiSchema { Type = "integer", Default = new OpenApiInteger(0) }
-                });
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
-                if (op.Responses.TryGetValue("200", out var ok) &&
-                    ok.Content.TryGetValue("application/json", out var json))
-                {
-                    json.Examples = new Dictionary<string, OpenApiExample>
-                    {
-                        ["Example"] = new()
-                        {
-                            Summary = "Top topics",
-                            Value = new OpenApiArray
-                            {
-                                new OpenApiObject
-                                {
-                                    ["topicId"] = new OpenApiString("61cb20af-ae78-4148-a057-df5e7962db39"),
-                                    ["topicTitle"] = new OpenApiString("Checkout improvements"),
-                                    ["status"] = new OpenApiString("OPEN"),
-                                    ["ideasCount"] = new OpenApiInteger(4),
-                                    ["votesCount"] = new OpenApiInteger(12)
-                                }
-                            }
-                        }
-                    };
-                }
-                return op;
-            });
-
-        group.MapGet("/most-voted-ideas", HandleMostVotedIdeas)
-            .WithName("GetMostVotedIdeas")
-            .WithSummary("Get most voted ideas (public)")
-            .WithDescription("""
-                Public endpoint.
-                Returns ideas ordered by vote count (descending), including the idea's topic information.
-                Supports pagination via `limit` and `offset`.
-                """)
+        group.MapGet("/most-voted-ideas", (HttpContext http, int? limit, int? offset) =>
+                HandleMostVotedIdeas(http, limit, offset, version))
+            .WithName($"GetMostVotedIdeas_{version}")
+            .WithSummary($"Get most voted ideas ({version})")
             .Produces<IReadOnlyList<MostVotedIdeaDto>>(StatusCodes.Status200OK)
-            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
-            .WithOpenApi(op =>
-            {
-                if (op.Responses.TryGetValue("200", out var ok) &&
-                    ok.Content.TryGetValue("application/json", out var json))
-                {
-                    json.Examples = new Dictionary<string, OpenApiExample>
-                    {
-                        ["Example"] = new()
-                        {
-                            Summary = "Most voted ideas",
-                            Value = new OpenApiArray
-                            {
-                                new OpenApiObject
-                                {
-                                    ["ideaId"] = new OpenApiString("d5bd9f40-9f2a-4c25-8d18-1dfc7f2d965e"),
-                                    ["ideaTitle"] = new OpenApiString("Guest checkout"),
-                                    ["topicId"] = new OpenApiString("61cb20af-ae78-4148-a057-df5e7962db39"),
-                                    ["topicTitle"] = new OpenApiString("Checkout improvements"),
-                                    ["votesCount"] = new OpenApiInteger(7)
-                                }
-                            }
-                        }
-                    };
-                }
-                return op;
-            });
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
-        group.MapGet("/topic/{topicId}/summary", HandleTopicSummary)
-            .WithName("GetTopicSummary")
-            .WithSummary("Get topic summary (public)")
-            .WithDescription("""
-                Public endpoint.
-                Returns aggregated statistics for a specific topic:
-                - ideas count
-                - total votes count
-                - winning idea (if any)
-                - most voted idea
-                """)
+        group.MapGet("/topic/{topicId}/summary", (string topicId, HttpContext http) =>
+                HandleTopicSummary(topicId, http, version))
+            .WithName($"GetTopicSummary_{version}")
+            .WithSummary($"Get topic summary ({version})")
             .Produces<TopicSummaryDto>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
-            .WithOpenApi(op =>
-            {
-                if (op.Responses.TryGetValue("200", out var ok) &&
-                    ok.Content.TryGetValue("application/json", out var json))
-                {
-                    json.Examples = new Dictionary<string, OpenApiExample>
-                    {
-                        ["Example"] = new()
-                        {
-                            Summary = "Topic summary",
-                            Value = new OpenApiObject
-                            {
-                                ["topicId"] = new OpenApiString("61cb20af-ae78-4148-a057-df5e7962db39"),
-                                ["topicTitle"] = new OpenApiString("Checkout improvements"),
-                                ["status"] = new OpenApiString("CLOSED"),
-                                ["ideasCount"] = new OpenApiInteger(4),
-                                ["votesCount"] = new OpenApiInteger(12),
-                                ["winningIdea"] = new OpenApiObject
-                                {
-                                    ["ideaId"] = new OpenApiString("d5bd9f40-9f2a-4c25-8d18-1dfc7f2d965e"),
-                                    ["ideaTitle"] = new OpenApiString("Guest checkout"),
-                                    ["votesCount"] = new OpenApiInteger(7)
-                                },
-                                ["mostVotedIdea"] = new OpenApiObject
-                                {
-                                    ["ideaId"] = new OpenApiString("d5bd9f40-9f2a-4c25-8d18-1dfc7f2d965e"),
-                                    ["ideaTitle"] = new OpenApiString("Guest checkout"),
-                                    ["votesCount"] = new OpenApiInteger(7)
-                                }
-                            }
-                        }
-                    };
-                }
-                return op;
-            });
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
         return endpoints;
     }
 
-    public static async Task<Results<Ok<IReadOnlyList<TopTopicDto>>, BadRequest<ErrorResponse>>> HandleTopTopics(
+    private static IStatisticsService GetService(HttpContext http, string version)
+    {
+        var adapter = (IRepositoryAdapter)http.Items["RepositoryAdapter"]!;
+        return new StatisticsService(adapter, version);
+    }
+
+    public static async Task<IResult> HandleTopTopics(
+        HttpContext http,
         int? limit,
         int? offset,
-        IStatisticsService service)
+        string version)
     {
         if (!TryValidatePaging(limit, offset, out var l, out var o, out var error))
             return TypedResults.BadRequest(new ErrorResponse(error));
 
+        var service = GetService(http, version);
         var data = await service.GetTopTopicsAsync(l, o);
         return TypedResults.Ok(data);
     }
 
-    public static async Task<Results<Ok<IReadOnlyList<MostVotedIdeaDto>>, BadRequest<ErrorResponse>>> HandleMostVotedIdeas(
+    public static async Task<IResult> HandleMostVotedIdeas(
+        HttpContext http,
         int? limit,
         int? offset,
-        IStatisticsService service)
+        string version)
     {
         if (!TryValidatePaging(limit, offset, out var l, out var o, out var error))
             return TypedResults.BadRequest(new ErrorResponse(error));
 
+        var service = GetService(http, version);
         var data = await service.GetMostVotedIdeasAsync(l, o);
         return TypedResults.Ok(data);
     }
 
-    public static async Task<Results<Ok<TopicSummaryDto>, NotFound, BadRequest<ErrorResponse>>> HandleTopicSummary(
+    public static async Task<IResult> HandleTopicSummary(
         string topicId,
-        IStatisticsService service)
+        HttpContext http,
+        string version)
     {
         if (string.IsNullOrWhiteSpace(topicId))
             return TypedResults.BadRequest(new ErrorResponse("topicId is required."));
 
+        var service = GetService(http, version);
         var summary = await service.GetTopicSummaryAsync(topicId);
         return summary is null ? TypedResults.NotFound() : TypedResults.Ok(summary);
     }

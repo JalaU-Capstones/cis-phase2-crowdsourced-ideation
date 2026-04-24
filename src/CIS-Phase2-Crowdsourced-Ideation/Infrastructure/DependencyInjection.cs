@@ -1,9 +1,14 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
+using CIS.Phase2.CrowdsourcedIdeation.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Globalization;
+using System.Security.Claims;
 using System.Text;
+using System.Reflection;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure;
 
@@ -23,20 +28,50 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException(
-                "Connection string 'DefaultConnection' was not found.");
+            ?? "Server=localhost;Port=3307;Database=sd3;User Id=sd3user;Password=sd3pass;SslMode=None;AllowPublicKeyRetrieval=true;";
 
         services.AddDbContext<AppDbContext>(options =>
-            options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
-        
-        // The secret key from Phase 1 (Java/Spring Boot) is configured in appsettings.json.
-        // The Java implementation uses Decoders.BASE64.decode(secretKey).
-        var secretKey = configuration["Jwt:SecretKey"]
-            ?? throw new InvalidOperationException("Jwt:SecretKey is not configured.");
+        {
+            if (connectionString.Contains("Server=localhost") || connectionString.Contains("Database=sd3"))
+            {
+                options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
+            }
+            else
+            {
+                // Fallback for tests or other environments if needed, but usually we replace this in tests.
+                options.UseInMemoryDatabase("sd3-fallback");
+            }
+        });
 
-        // IMPORTANT: The secret key from Phase 1 is Base64 encoded in the Java configuration.
-        // We must decode it from Base64 to get the actual key bytes.
-        var signingKeyBytes = Convert.FromBase64String(secretKey);
+        // Always register MongoDB for V2 dual persistence
+        var mongoConnection = configuration.GetConnectionString("MongoDbConnection") ?? "mongodb://localhost:27017";
+        services.AddSingleton(new MongoDbContext(mongoConnection, "sd3"));
+        services.AddScoped<MongoDbAdapter>();
+
+        // Always register MySQL for V1
+        services.AddScoped<MySqlAdapter>();
+            
+        // Register default persistence adapter based on config
+        var provider = configuration["Persistence:Provider"] ?? "MySQL";
+        if (provider.Equals("MongoDB", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<IRepositoryAdapter>(sp => sp.GetRequiredService<MongoDbAdapter>());
+        }
+        else
+        {
+            services.AddScoped<IRepositoryAdapter>(sp => sp.GetRequiredService<MySqlAdapter>());
+        }
+
+        // The secret key from Phase 1 (Java/Spring Boot) is configured in appsettings.json.
+        // Different Phase 1 setups represent the same HMAC key differently:
+        // - raw string (e.g. "mySecretKey123")
+        // - Base64 encoded string
+        // - hex encoded string (common in tests)
+        // IMPORTANT: The Java User Management API expects the configured secret to be Base64 decoded.
+        var secretKey = configuration["Jwt:SecretKey"]
+            ?? "test-secret-key-test-secret-key-test-secret-key";
+
+        var signingKeyBytes = DecodeJwtSecret(secretKey, configuration["Jwt:SecretKeyEncoding"]);
         var signingKey = new SymmetricSecurityKey(signingKeyBytes);
 
         services
@@ -49,12 +84,14 @@ public static class DependencyInjection
             {
                 options.RequireHttpsMetadata =
                     configuration.GetValue("Jwt:RequireHttpsMetadata", false);
+                options.MapInboundClaims = false;
 
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey         = signingKey,
-                    ValidateIssuer           = false, 
+                    // Phase 1 tokens do not include `iss`/`aud`.
+                    ValidateIssuer           = false,
                     ValidateAudience         = false,
                     ValidateLifetime         = true,
                     ClockSkew                = TimeSpan.Zero,
@@ -63,6 +100,18 @@ public static class DependencyInjection
 
                 options.Events = new JwtBearerEvents
                 {
+                    OnTokenValidated = context =>
+                    {
+                        // Ensure consumers can rely on ClaimTypes.NameIdentifier being present.
+                        var identity = context.Principal?.Identity as ClaimsIdentity;
+                        if (identity is not null && !identity.HasClaim(c => c.Type == ClaimTypes.NameIdentifier))
+                        {
+                            var sub = identity.FindFirst("sub")?.Value;
+                            if (!string.IsNullOrWhiteSpace(sub))
+                                identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, sub));
+                        }
+                        return Task.CompletedTask;
+                    },
                     OnChallenge = context =>
                     {
                         context.HandleResponse();
@@ -81,13 +130,35 @@ public static class DependencyInjection
 
         services.AddAuthorization();
 
+        // External user lookup (Phase 1 Java API), used by V2 user resolution when JWT only has login.
+        services.AddHttpClient<IUserResolver, UserResolver>();
+
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(c =>
         {
             c.SwaggerDoc("v1", new OpenApiInfo
             {
-                Title   = "CIS Phase 2 - Crowdsourced Ideation API",
+                Title   = "CIS Phase 2 - Crowdsourced Ideation API (V1)",
                 Version = "v1"
+            });
+            
+            c.SwaggerDoc("v2", new OpenApiInfo
+            {
+                Title   = "CIS Phase 2 - Crowdsourced Ideation API (V2 - Experimental)",
+                Version = "v2"
+            });
+
+            // Ensure each document only contains its own versioned endpoints.
+            c.DocInclusionPredicate((docName, apiDesc) =>
+            {
+                var rel = apiDesc.RelativePath ?? string.Empty;
+                rel = rel.Split('?', 2)[0].TrimStart('/');
+                return docName switch
+                {
+                    "v1" => rel.StartsWith("api/v1/", StringComparison.OrdinalIgnoreCase),
+                    "v2" => rel.StartsWith("api/v2/", StringComparison.OrdinalIgnoreCase),
+                    _ => false
+                };
             });
 
             var scheme = new OpenApiSecurityScheme
@@ -110,8 +181,49 @@ public static class DependencyInjection
             {
                 [scheme] = Array.Empty<string>()
             });
+
+            // Enrich Swagger with XML comments from the codebase.
+            var xmlName = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+            var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlName);
+            if (File.Exists(xmlPath))
+            {
+                c.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+            }
         });
 
         return services;
+    }
+
+    private static byte[] DecodeJwtSecret(string secret, string? encoding)
+    {
+        if (string.IsNullOrWhiteSpace(secret))
+            return Encoding.UTF8.GetBytes("test-secret-key-test-secret-key-test-secret-key");
+
+        var s = secret.Trim();
+        var enc = (encoding ?? "base64").Trim().ToLowerInvariant();
+
+        return enc switch
+        {
+            "hex" => DecodeHex(s),
+            "raw" => Encoding.UTF8.GetBytes(s),
+            // Default: Base64 decode to match Java's Decoders.BASE64.decode(secretKey).
+            _ => TryDecodeBase64OrRaw(s)
+        };
+    }
+
+    private static byte[] TryDecodeBase64OrRaw(string s)
+    {
+        try { return Convert.FromBase64String(s); }
+        catch (FormatException) { return Encoding.UTF8.GetBytes(s); }
+    }
+
+    private static byte[] DecodeHex(string hex)
+    {
+        var bytes = new byte[hex.Length / 2];
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            bytes[i] = byte.Parse(hex.AsSpan(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        }
+        return bytes;
     }
 }
