@@ -154,7 +154,3 @@ function seedIdeasAndVotesOnce() {
 
 seedIdeasAndVotesOnce();
 
-// Loop until setup completes, then this request will be allowed to run.
-postman.setNextRequest(pm.info.requestName);
-pm.execution.skipRequest();
-
