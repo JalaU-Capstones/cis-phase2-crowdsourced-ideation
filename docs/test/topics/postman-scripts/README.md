@@ -44,7 +44,7 @@ Create 7 requests and paste scripts as follows:
 
 ## Request URLs / Bodies (Quick)
 
-1) `POST {{phase1_base_url}}/api/v1/auth/login`
+1) `POST {{phase1_base_url}}/api/{{api_version}}/auth/login`
 ```json
 { "login": "{{seed_login}}", "password": "{{seed_password}}" }
 ```

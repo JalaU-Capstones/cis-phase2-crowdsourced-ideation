@@ -63,7 +63,7 @@ Create these 9 requests in this order, and paste the matching scripts from `docs
 ### 1) Seed user login (Phase 1)
 
 - Method: `POST`
-- URL: `{{phase1_base_url}}/api/v1/auth/login`
+- URL: `{{phase1_base_url}}/api/{{api_version}}/auth/login`
 - Headers: `Content-Type: application/json`
 - Body (raw JSON):
   ```json
