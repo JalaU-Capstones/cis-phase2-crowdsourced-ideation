@@ -85,6 +85,4 @@ function createSecondIdeaOnce() {
 }
 
 createSecondIdeaOnce();
-postman.setNextRequest(pm.info.requestName);
-pm.execution.skipRequest();
 
