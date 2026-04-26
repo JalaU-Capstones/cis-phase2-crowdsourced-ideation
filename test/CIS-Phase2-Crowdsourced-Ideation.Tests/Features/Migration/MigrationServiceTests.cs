@@ -15,12 +15,18 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Migration;
 /// Tests de integración para MigrationService.
 /// Levanta contenedores reales de MySQL y MongoDB usando Testcontainers.
 /// Verifica que la migración transfiere datos correctamente y es idempotente.
+///
+/// IMPORTANTE: estos tests requieren Docker local. Se excluyen del pipeline de CI
+/// usando el trait "Category=DockerRequired". Para correrlos localmente:
+///   dotnet test --filter "FullyQualifiedName~Migration"
 /// </summary>
 [Collection("Migration")]
+[Trait("Category", "DockerRequired")]
 public sealed class MigrationServiceTests : IAsyncLifetime
 {
     // ---------------------------------------------------------------------------
-    // Contenedores
+    // Contenedores — el endpoint se detecta automáticamente por Testcontainers.
+    // En Windows usa npipe, en Linux usa /var/run/docker.sock.
     // ---------------------------------------------------------------------------
 
     private readonly MySqlContainer _mysql = new MySqlBuilder()
@@ -28,12 +34,10 @@ public sealed class MigrationServiceTests : IAsyncLifetime
         .WithUsername("sd3user")
         .WithPassword("sd3pass")
         .WithImage("mysql:8.0")
-        .WithDockerEndpoint("npipe://./pipe/docker_engine")
         .Build();
 
     private readonly MongoDbContainer _mongo = new MongoDbBuilder()
         .WithImage("mongo:6.0")
-        .WithDockerEndpoint("npipe://./pipe/docker_engine")
         .Build();
 
     private string MysqlConnStr => _mysql.GetConnectionString();
