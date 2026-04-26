@@ -25,12 +25,15 @@ dotnet-test:
     NUGET_PACKAGES: "$CI_PROJECT_DIR/.nuget/packages"
   # The script that will be executed by the runner.
   # It restores, runs all tests, and generates a coverage report (XPlat Code Coverage).
+  # Tests tagged with [Trait("Category", "DockerRequired")] are excluded from CI
+  # because they require a local Docker daemon (Testcontainers). Run them locally with:
+  #   dotnet test --filter "FullyQualifiedName~Migration"
   script:
     - dotnet --info
     - dotnet restore
     - rm -rf test/TestResults coverage-report
     - mkdir -p test/TestResults
-    - dotnet test --configuration Release --no-restore --results-directory test/TestResults --collect:"XPlat Code Coverage" --logger "junit;LogFilePath=test/TestResults/TEST-results.xml"
+    - dotnet test --configuration Release --no-restore --results-directory test/TestResults --collect:"XPlat Code Coverage" --logger "junit;LogFilePath=test/TestResults/TEST-results.xml" --filter "Category!=DockerRequired"
     - dotnet tool restore
     - dotnet tool run reportgenerator -reports:"test/TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:"Html;Cobertura"
   # Defines artifacts to be saved after the job completes.
