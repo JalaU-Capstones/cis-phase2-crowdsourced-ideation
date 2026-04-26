@@ -15,8 +15,8 @@ public class MongoDbContext
         _database = client.GetDatabase(databaseName);
     }
 
-    public IMongoCollection<Topic> Topics => _database.GetCollection<Topic>("topics");
-    public IMongoCollection<Idea> Ideas => _database.GetCollection<Idea>("ideas");
-    public IMongoCollection<Vote> Votes => _database.GetCollection<Vote>("votes");
-    public IMongoCollection<UserRecord> Users => _database.GetCollection<UserRecord>("users");
+    public virtual IMongoCollection<Topic> Topics => _database.GetCollection<Topic>("topics");
+    public virtual IMongoCollection<Idea> Ideas => _database.GetCollection<Idea>("ideas");
+    public virtual IMongoCollection<Vote> Votes => _database.GetCollection<Vote>("votes");
+    public virtual IMongoCollection<UserRecord> Users => _database.GetCollection<UserRecord>("users");
 }

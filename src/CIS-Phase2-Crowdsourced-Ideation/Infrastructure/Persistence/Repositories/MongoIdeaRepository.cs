@@ -40,7 +40,8 @@ public class MongoIdeaRepository(MongoDbContext context) : IIdeaRepository
 
     public async Task<bool> ExistsAsync(Guid id)
     {
-        return await _collection.Find(i => i.Id == id).AnyAsync();
+       return await _collection.CountDocumentsAsync(
+         Builders<Idea>.Filter.Eq(i => i.Id, id)) > 0;
     }
 
     public async Task<int> CountAsync()

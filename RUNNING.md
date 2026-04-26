@@ -27,10 +27,10 @@ docker compose up -d
 > docker compose down -v && docker compose up -d
 > ```
 
-Verify the container is running:
+Verify the containers are running:
 ```bash
 docker ps
-# You should see: cis-mysql-phase1
+# You should see: cis-mysql-phase1  and  cis-mongo-phase1
 ```
 
 Connection details:
@@ -54,6 +54,16 @@ The API implements versioning to support different persistence layers (US 1.1):
 - **V2** (`/api/v2/*`): Uses **MongoDB** persistence.
 
 Persistence adapters are automatically resolved based on the route version.
+
+### Switching the default provider (optional)
+
+The `Persistence:Provider` key in `appsettings.json` controls the default `IRepositoryAdapter` used internally. It does **not** change endpoint routing — `/api/v1/` always uses MySQL and `/api/v2/` always uses MongoDB regardless of this setting.
+
+```json
+"Persistence": {
+  "Provider": "MySQL"
+}
+```
 
 ## 6. Authentication
 
@@ -124,14 +134,72 @@ curl http://localhost:5257/api/v2/topics
 dotnet test
 ```
 
-## 11. Complete API Examples (V1 + V2) with HATEOAS `_links`
+To filter by category:
+```bash
+# Only MongoDB repository unit tests
+dotnet test --filter "FullyQualifiedName~Mongo"
+
+# Only V2 endpoint integration tests
+dotnet test --filter "FullyQualifiedName~V2"
+
+# Verbose output
+dotnet test --logger "console;verbosity=detailed"
+```
+
+## 11. Migrating Data from MySQL to MongoDB (US 2.2)
+
+> The migration script transfers all existing MySQL data into MongoDB.
+> It is **idempotent**: safe to run multiple times (uses upsert by `_id`).
+> A validation step confirms 100% data consistency after migration.
+
+### Install dotnet-script (one time)
+```bash
+dotnet tool install -g dotnet-script
+```
+
+### Run the migration
+```bash
+dotnet script migration/migrate-to-mongo.csx -- \
+  --mysql "Server=localhost;Port=3307;Database=sd3;User Id=sd3user;Password=sd3pass;SslMode=None;AllowPublicKeyRetrieval=true;" \
+  --mongo "mongodb://localhost:27017" \
+  --db    "sd3"
+```
+
+### Expected output
+```
+=== CIS Phase 3 — Migración MySQL → MongoDB ===
+── [1/4] Migrando usuarios...
+   ✓ 42 usuarios migrados (upsert, idempotente)
+── [2/4] Migrando topics...
+   ✓ 18 topics migrados
+── [3/4] Migrando ideas...
+   ✓ 95 ideas migradas
+── [4/4] Migrando votos...
+   ✓ 310 votos migrados
+
+── Validando integridad...
+   ✓  users      MySQL=    42  MongoDB=    42
+   ✓  topics     MySQL=    18  MongoDB=    18
+   ✓  ideas      MySQL=    95  MongoDB=    95
+   ✓  votes      MySQL=   310  MongoDB=   310
+
+✅ Migración completada. 100% de consistencia verificada.
+```
+
+If `✗ MISMATCH` appears, check Docker logs and re-run (upsert guarantees idempotency).
+
+### Rollback to MySQL
+
+No redeployment needed. `/api/v1/` endpoints never stopped using MySQL. To roll back, simply point clients back to `/api/v1/`.
+
+## 12. Complete API Examples (V1 + V2) with HATEOAS `_links`
 
 Notes:
 - All read endpoints are public unless explicitly marked as authenticated.
 - All write endpoints require `Authorization: Bearer $TOKEN`.
 - All resource responses include `_links` and these links stay in the same API version (`/api/v1/*` links in v1 responses, `/api/v2/*` links in v2 responses).
 
-### 11.1. Topics
+### 12.1. Topics
 
 Create a topic (Authenticated):
 ```bash
@@ -222,7 +290,7 @@ curl -X DELETE "http://localhost:5257/api/v2/topics/$TOPIC_ID" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### 11.2. Ideas
+### 12.2. Ideas
 
 Create an idea (Authenticated):
 ```bash
@@ -327,7 +395,7 @@ curl -X DELETE "http://localhost:5257/api/v2/ideas/$IDEA_ID" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### 11.3. Votes
+### 12.3. Votes
 
 Cast a vote (Authenticated):
 ```bash
@@ -427,7 +495,7 @@ curl -X DELETE "http://localhost:5257/api/v2/votes/$VOTE_ID" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-### 11.4. Statistics
+### 12.4. Statistics
 
 Top topics (Public):
 ```bash
