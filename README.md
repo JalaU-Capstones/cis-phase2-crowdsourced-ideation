@@ -49,6 +49,12 @@ dotnet run --project src/CIS-Phase2-Crowdsourced-Ideation
 
 Swagger (Development only): `http://localhost:5257/swagger` (see `launchSettings.json` for the current ports).
 
+## Integration Testing
+
+This project includes a complete Postman test suite covering all features (Topics, Ideas, Votes, Statistics) for both API versions (v1 MySQL, v2 MongoDB).
+
+See [`docs/test/README.md`](docs/test/README.md) for detailed setup instructions, environment configuration, and how to run the tests using Postman or Newman.
+
 ## How To Generate Test Coverage Report
 1. Run tests and collect coverage:
 ```bash
