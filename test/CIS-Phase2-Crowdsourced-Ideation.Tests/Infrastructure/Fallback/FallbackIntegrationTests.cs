@@ -17,7 +17,7 @@ using Xunit;
 namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Infrastructure.Fallback;
 
 /// <summary>
-/// End-to-end integration tests for the emergency fallback mechanism using real MySQL/MongoDB containers.
+/// End-to-end integration tests for the emergency database fallback mechanism using real MySQL/MongoDB containers.
 /// </summary>
 [Collection("Docker")]
 [Trait("Category", "DockerRequired")]
@@ -159,7 +159,8 @@ public sealed class FallbackIntegrationTests : IAsyncLifetime
             {
                 logging.ClearProviders();
                 logging.AddConsole();
-                logging.SetMinimumLevel(LogLevel.Information);
+                // Set minimum log level to Debug to capture more details
+                logging.SetMinimumLevel(LogLevel.Debug);
             });
 
             builder.ConfigureAppConfiguration((_, cfg) =>
