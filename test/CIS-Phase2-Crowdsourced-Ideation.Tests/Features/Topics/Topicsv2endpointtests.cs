@@ -49,10 +49,10 @@ public sealed class TopicsV2EndpointTests : IClassFixture<TopicsV2EndpointTests.
                     ["ConnectionStrings:DefaultConnection"] = "Server=localhost;Database=sd3;User=sd3user;Password=sd3pass;",
                     ["ConnectionStrings:MongoDbConnection"] = "mongodb://localhost:27017/sd3",
                     ["Persistence:Provider"]                = "MySQL",
+                    ["Fallback:Enabled"]                    = "false",
                     ["Jwt:SecretKey"]                       = "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970",
                     ["Jwt:SecretKeyEncoding"]               = "hex",
-                    ["Jwt:RequireHttpsMetadata"]            = "false",
-                    ["ExternalUserApi:BaseUrl"]             = "http://localhost:9999"
+                    ["Jwt:RequireHttpsMetadata"]            = "false"
                 });
             });
 

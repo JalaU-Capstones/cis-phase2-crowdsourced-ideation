@@ -21,10 +21,7 @@ public static class IdeaEndpoints
 
         group.AddEndpointFilter(async (context, next) =>
         {
-            var adapter = version == "v2" 
-                ? (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MongoDbAdapter>()
-                : (IRepositoryAdapter)context.HttpContext.RequestServices.GetRequiredService<MySqlAdapter>();
-            
+            var adapter = context.HttpContext.RequestServices.GetRequiredService<IRepositoryAdapter>();
             context.HttpContext.Items["RepositoryAdapter"] = adapter;
             return await next(context);
         });

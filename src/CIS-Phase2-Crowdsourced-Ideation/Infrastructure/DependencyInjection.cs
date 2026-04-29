@@ -1,6 +1,6 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
-using CIS.Phase2.CrowdsourcedIdeation.Services;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -43,24 +43,13 @@ public static class DependencyInjection
             }
         });
 
-        // Always register MongoDB for V2 dual persistence
+        // Always register MongoDB context (V2 persistence and fallback target)
         var mongoConnection = configuration.GetConnectionString("MongoDbConnection") ?? "mongodb://localhost:27017";
         services.AddSingleton(new MongoDbContext(mongoConnection, "sd3"));
-        services.AddScoped<MongoDbAdapter>();
 
-        // Always register MySQL for V1
-        services.AddScoped<MySqlAdapter>();
-            
-        // Register default persistence adapter based on config
-        var provider = configuration["Persistence:Provider"] ?? "MySQL";
-        if (provider.Equals("MongoDB", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddScoped<IRepositoryAdapter>(sp => sp.GetRequiredService<MongoDbAdapter>());
-        }
-        else
-        {
-            services.AddScoped<IRepositoryAdapter>(sp => sp.GetRequiredService<MySqlAdapter>());
-        }
+        // Emergency fallback mechanism (health probes + per-request adapter routing + write blocking middleware).
+        // This registers IRepositoryAdapter as a fallback-aware adapter.
+        services.AddDatabaseFallback(configuration);
 
         // The secret key from Phase 1 (Java/Spring Boot) is configured in appsettings.json.
         // Different Phase 1 setups represent the same HMAC key differently:
@@ -130,8 +119,6 @@ public static class DependencyInjection
 
         services.AddAuthorization();
 
-        // External user lookup (Phase 1 Java API), used by V2 user resolution when JWT only has login.
-        services.AddHttpClient<IUserResolver, UserResolver>();
 
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(c =>

@@ -21,7 +21,7 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Migration;
 /// Run locally with Docker:
 ///   dotnet test --filter "FullyQualifiedName~Migration"
 /// </summary>
-[Collection("Migration")]
+[Collection("Docker")]
 [Trait("Category", "DockerRequired")]
 public sealed class MigrationServiceTests : IAsyncLifetime
 {
