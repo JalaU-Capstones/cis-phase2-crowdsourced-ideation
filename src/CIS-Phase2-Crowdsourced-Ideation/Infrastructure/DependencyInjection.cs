@@ -43,9 +43,15 @@ public static class DependencyInjection
             }
         });
 
-        // Always register MongoDB context (V2 persistence and fallback target)
-        var mongoConnection = configuration.GetConnectionString("MongoDbConnection") ?? "mongodb://localhost:27017";
-        services.AddSingleton(new MongoDbContext(mongoConnection, "sd3"));
+        // Always register MongoDB context (V2 persistence and fallback target).
+        // Resolve connection settings from IConfiguration at service resolution time so
+        // test host configuration overrides are honored.
+        services.AddSingleton(sp =>
+        {
+            var cfg = sp.GetRequiredService<IConfiguration>();
+            var mongoConnection = cfg.GetConnectionString("MongoDbConnection") ?? "mongodb://localhost:27017";
+            return new MongoDbContext(mongoConnection, "sd3");
+        });
 
         // Emergency fallback mechanism (health probes + per-request adapter routing + write blocking middleware).
         // This registers IRepositoryAdapter as a fallback-aware adapter.

@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.HealthChecks;
 using FluentAssertions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -83,7 +84,8 @@ public sealed class HealthChecksTests
     {
         private ConnectionState _state = ConnectionState.Closed;
 
-        public override string? ConnectionString { get; set; } = "fake";
+        [AllowNull]
+        public override string ConnectionString { get; set; } = "fake";
         public override string Database => "fake";
         public override string DataSource => "fake";
         public override string ServerVersion => "0";
@@ -110,7 +112,8 @@ public sealed class HealthChecksTests
 
     private sealed class FakeDbCommand(bool shouldFail) : DbCommand
     {
-        public override string? CommandText { get; set; } = string.Empty;
+        [AllowNull]
+        public override string CommandText { get; set; } = string.Empty;
         public override int CommandTimeout { get; set; }
         public override CommandType CommandType { get; set; } = CommandType.Text;
         public override UpdateRowSource UpdatedRowSource { get; set; }

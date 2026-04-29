@@ -18,11 +18,12 @@ public sealed class DatabaseFallbackService(
     /// <inheritdoc />
     public bool IsFallbackActiveForVersion(string versionPath)
     {
-        var db = GetActiveDatabase(versionPath);
+        var normalizedPath = NormalizeVersionPath(versionPath);
+        var db = GetActiveDatabase(normalizedPath);
         if (db is DatabaseType.BothDown)
             return false;
 
-        var def = GetDefaultDatabase(versionPath);
+        var def = GetDefaultDatabase(normalizedPath);
         return options.Value.Enabled && db != def;
     }
 
@@ -99,7 +100,8 @@ public sealed class DatabaseFallbackService(
     private static DatabaseType GetDefaultDatabase(string versionPath)
     {
         // Phase 2 contract: v1 defaults to MySQL, v2 defaults to MongoDB.
-        return versionPath.StartsWith("/api/v2/", StringComparison.OrdinalIgnoreCase)
+        return versionPath.StartsWith("/api/v2/", StringComparison.OrdinalIgnoreCase) ||
+               versionPath.Equals("/api/v2", StringComparison.OrdinalIgnoreCase)
             ? DatabaseType.MongoDb
             : DatabaseType.MySql;
     }

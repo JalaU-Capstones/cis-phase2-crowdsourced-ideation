@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -212,7 +213,10 @@ public sealed class FallbackIntegrationTests : IAsyncLifetime
                 if (dbDescriptor is not null) services.Remove(dbDescriptor);
 
                 services.AddDbContext<AppDbContext>(o =>
-                    o.UseMySql(mysqlConn, ServerVersion.AutoDetect(mysqlConn)));
+                {
+                    o.UseMySql(mysqlConn, new MySqlServerVersion(new Version(8, 0, 36)));
+                    o.ConfigureWarnings(w => w.Ignore(CoreEventId.ManyServiceProvidersCreatedWarning));
+                });
             });
         }
     }
