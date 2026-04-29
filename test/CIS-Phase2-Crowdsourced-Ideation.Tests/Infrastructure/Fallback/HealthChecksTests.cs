@@ -83,7 +83,7 @@ public sealed class HealthChecksTests
     {
         private ConnectionState _state = ConnectionState.Closed;
 
-        public override string ConnectionString { get; set; } = "fake";
+        public override string? ConnectionString { get; set; } = "fake";
         public override string Database => "fake";
         public override string DataSource => "fake";
         public override string ServerVersion => "0";
@@ -110,7 +110,7 @@ public sealed class HealthChecksTests
 
     private sealed class FakeDbCommand(bool shouldFail) : DbCommand
     {
-        public override string CommandText { get; set; } = string.Empty;
+        public override string? CommandText { get; set; } = string.Empty;
         public override int CommandTimeout { get; set; }
         public override CommandType CommandType { get; set; } = CommandType.Text;
         public override UpdateRowSource UpdatedRowSource { get; set; }

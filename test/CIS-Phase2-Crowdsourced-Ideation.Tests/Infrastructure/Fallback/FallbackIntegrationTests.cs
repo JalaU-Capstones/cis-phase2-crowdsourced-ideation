@@ -79,6 +79,33 @@ public sealed class FallbackIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task WhenMySqlDown_V1ReadsFallbackToMongo_V1WritesBlocked_V2StillWorks()
+    {
+        await using var factory = CreateFactory();
+        var client = factory.CreateClient();
+
+        // Stop MySQL to force V1 fallback to MongoDB.
+        await _mysql.StopAsync();
+        await WaitForFallbackWriteBlockAsync(client, "/api/v1/topics");
+        await WaitFor503Or200Async(client, "/api/v1/topics/", expect503: false);
+
+        // V1 read should still work (served from MongoDB via fallback adapter).
+        var v1Get = await client.GetAsync("/api/v1/topics/");
+        var v1Body = await v1Get.Content.ReadAsStringAsync();
+        v1Get.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {v1Body}");
+
+        // V1 write should be blocked with the maintenance message (503).
+        var v1Post = await PostAsAuthedAsync(client, "/api/v1/topics");
+        v1Post.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await v1Post.Content.ReadAsStringAsync())
+            .Should().Contain("Our system is currently undergoing planned maintenance.");
+
+        // V2 read should work normally since MongoDB is up and is the default for V2.
+        var v2Get = await client.GetAsync("/api/v2/topics/");
+        v2Get.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task WhenBothDatabasesDown_AllRequestsReturnGenericOutageMessage()
     {
         await using var factory = CreateFactory();

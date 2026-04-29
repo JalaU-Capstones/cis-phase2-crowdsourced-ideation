@@ -40,11 +40,8 @@ public sealed class DatabaseHealthMonitor(
 
     private async Task ProbeAsync(CancellationToken ct)
     {
-        var mysql = await mySqlHealthCheck.CheckHealthAsync(new HealthCheckContext(), ct);
-        var mongo = await mongoDbHealthCheck.CheckHealthAsync(new HealthCheckContext(), ct);
-
-        var mysqlHealthy = mysql.Status == HealthStatus.Healthy;
-        var mongoHealthy = mongo.Status == HealthStatus.Healthy;
+        var mysqlHealthy = await ProbeMySqlAsync(ct);
+        var mongoHealthy = await ProbeMongoAsync(ct);
 
         if (cache.TrySetMySqlHealthy(mysqlHealthy, out var mysqlTransition))
         {
@@ -54,6 +51,34 @@ public sealed class DatabaseHealthMonitor(
         if (cache.TrySetMongoHealthy(mongoHealthy, out var mongoTransition))
         {
             logger.LogWarning("MongoDB health changed: {From} -> {To}", mongoTransition!.Value.from, mongoTransition.Value.to);
+        }
+    }
+
+    private async Task<bool> ProbeMySqlAsync(CancellationToken ct)
+    {
+        try
+        {
+            var result = await mySqlHealthCheck.CheckHealthAsync(new HealthCheckContext(), ct);
+            return result.Status == HealthStatus.Healthy;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "MySQL probe threw unexpectedly; marking MySQL as unhealthy.");
+            return false;
+        }
+    }
+
+    private async Task<bool> ProbeMongoAsync(CancellationToken ct)
+    {
+        try
+        {
+            var result = await mongoDbHealthCheck.CheckHealthAsync(new HealthCheckContext(), ct);
+            return result.Status == HealthStatus.Healthy;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "MongoDB probe threw unexpectedly; marking MongoDB as unhealthy.");
+            return false;
         }
     }
 }

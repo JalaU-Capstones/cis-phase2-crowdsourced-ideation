@@ -48,7 +48,7 @@ public sealed class DatabaseFallbackMiddleware(
             return;
         }
 
-        if (!HttpMethods.IsGet(context.Request.Method) && fallback.IsFallbackActiveForVersion(path))
+        if (IsWriteMethod(context.Request.Method) && fallback.IsFallbackActiveForVersion(path))
         {
             logger.LogWarning("Fallback active; blocking write {Method} {Path} with 503.", context.Request.Method, path);
             await Write503Async(context, MaintenanceMessage);
@@ -60,7 +60,15 @@ public sealed class DatabaseFallbackMiddleware(
 
     private static bool IsVersionedApiPath(string path) =>
         path.StartsWith("/api/v1/", StringComparison.OrdinalIgnoreCase) ||
-        path.StartsWith("/api/v2/", StringComparison.OrdinalIgnoreCase);
+        path.StartsWith("/api/v2/", StringComparison.OrdinalIgnoreCase) ||
+        path.Equals("/api/v1", StringComparison.OrdinalIgnoreCase) ||
+        path.Equals("/api/v2", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsWriteMethod(string method) =>
+        HttpMethods.IsPost(method) ||
+        HttpMethods.IsPut(method) ||
+        HttpMethods.IsPatch(method) ||
+        HttpMethods.IsDelete(method);
 
     private static async Task Write503Async(HttpContext context, string message)
     {

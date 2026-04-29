@@ -29,6 +29,7 @@ public sealed class FallbackAdapter(
     {
         var path = httpContextAccessor.HttpContext?.Request.Path.Value ?? string.Empty;
         var active = fallback.GetActiveDatabase(path);
+        logger.LogWarning("Fallback adapter routing request path {Path} to {Database}.", path, active);
 
         return active switch
         {

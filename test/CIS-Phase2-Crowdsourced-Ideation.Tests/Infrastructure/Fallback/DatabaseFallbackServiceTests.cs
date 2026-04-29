@@ -15,6 +15,7 @@ public sealed class DatabaseFallbackServiceTests
     [InlineData("/api/v1/topics", false, true, DatabaseType.MongoDb, true)]
     [InlineData("/api/v1/topics", false, false, DatabaseType.BothDown, false)]
     [InlineData("/api/v2/topics", true, true, DatabaseType.MongoDb, false)]
+    [InlineData("/api/v2", true, true, DatabaseType.MongoDb, false)]
     [InlineData("/api/v2/topics", true, false, DatabaseType.MySql, true)]
     [InlineData("/api/v2/topics", false, false, DatabaseType.BothDown, false)]
     public void GetActiveDatabase_UsesDefaultsAndFallbackRules(

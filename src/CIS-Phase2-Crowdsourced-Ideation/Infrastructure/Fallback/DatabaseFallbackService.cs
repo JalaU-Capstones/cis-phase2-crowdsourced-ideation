@@ -14,7 +14,6 @@ public sealed class DatabaseFallbackService(
     ILogger<DatabaseFallbackService> logger) : IDatabaseFallbackService
 {
     private readonly object _lock = new();
-    private readonly Dictionary<string, (DatabaseType active, bool fallbackActive)> _last = new(StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
     public bool IsFallbackActiveForVersion(string versionPath)
@@ -30,11 +29,16 @@ public sealed class DatabaseFallbackService(
     /// <inheritdoc />
     public DatabaseType GetActiveDatabase(string versionPath)
     {
+        var normalizedPath = NormalizeVersionPath(versionPath);
+        var defaultDb = GetDefaultDatabase(normalizedPath);
+
         // When disabled, always stick to each version's default database (no switching).
         if (!options.Value.Enabled)
-            return GetDefaultDatabase(versionPath);
+        {
+            LogDecision(normalizedPath, defaultDb, fallbackActive: false, defaultDb, defaultHealthy: true, otherHealthy: true);
+            return defaultDb;
+        }
 
-        var defaultDb = GetDefaultDatabase(versionPath);
         var otherDb = defaultDb == DatabaseType.MySql ? DatabaseType.MongoDb : DatabaseType.MySql;
 
         var defaultHealthy = IsHealthy(defaultDb);
@@ -59,42 +63,28 @@ public sealed class DatabaseFallbackService(
             fallbackActive = false;
         }
 
-        LogTransitions(versionPath, active, fallbackActive);
+        LogDecision(normalizedPath, active, fallbackActive, defaultDb, defaultHealthy, otherHealthy);
         return active;
     }
 
-    private void LogTransitions(string versionPath, DatabaseType active, bool fallbackActive)
+    private void LogDecision(
+        string versionPath,
+        DatabaseType active,
+        bool fallbackActive,
+        DatabaseType defaultDb,
+        bool defaultHealthy,
+        bool otherHealthy)
     {
         lock (_lock)
         {
-            var key = NormalizeVersionPath(versionPath);
-            if (!_last.TryGetValue(key, out var last))
-            {
-                _last[key] = (active, fallbackActive);
-                if (active == DatabaseType.BothDown)
-                    logger.LogWarning("Both databases are down for {VersionPath}.", key);
-                else if (fallbackActive)
-                    logger.LogWarning("Database fallback activated for {VersionPath}. Active database: {Database}.", key, active);
-                return;
-            }
-
-            if (last.active == active && last.fallbackActive == fallbackActive)
-                return;
-
-            _last[key] = (active, fallbackActive);
-
-            if (active == DatabaseType.BothDown)
-            {
-                logger.LogWarning("Both databases are down for {VersionPath}.", key);
-            }
-            else if (fallbackActive)
-            {
-                logger.LogWarning("Database fallback activated for {VersionPath}. Active database: {Database}.", key, active);
-            }
-            else
-            {
-                logger.LogWarning("Database fallback deactivated for {VersionPath}. Active database: {Database}.", key, active);
-            }
+            logger.LogWarning(
+                "Fallback decision for {VersionPath}: default={DefaultDatabase}, defaultHealthy={DefaultHealthy}, otherHealthy={OtherHealthy}, active={ActiveDatabase}, fallbackActive={FallbackActive}.",
+                versionPath,
+                defaultDb,
+                defaultHealthy,
+                otherHealthy,
+                active,
+                fallbackActive);
         }
     }
 
@@ -108,9 +98,8 @@ public sealed class DatabaseFallbackService(
 
     private static DatabaseType GetDefaultDatabase(string versionPath)
     {
-        var v = NormalizeVersionPath(versionPath);
         // Phase 2 contract: v1 defaults to MySQL, v2 defaults to MongoDB.
-        return v.StartsWith("/api/v2/", StringComparison.OrdinalIgnoreCase)
+        return versionPath.StartsWith("/api/v2/", StringComparison.OrdinalIgnoreCase)
             ? DatabaseType.MongoDb
             : DatabaseType.MySql;
     }
@@ -121,6 +110,8 @@ public sealed class DatabaseFallbackService(
             return "/api/v1/";
 
         var p = versionPath.Trim();
+        if (p.Equals("/api/v1", StringComparison.OrdinalIgnoreCase)) return "/api/v1/";
+        if (p.Equals("/api/v2", StringComparison.OrdinalIgnoreCase)) return "/api/v2/";
         if (p.StartsWith("/api/v1/", StringComparison.OrdinalIgnoreCase)) return "/api/v1/";
         if (p.StartsWith("/api/v2/", StringComparison.OrdinalIgnoreCase)) return "/api/v2/";
         if (p.Contains("/api/v1/", StringComparison.OrdinalIgnoreCase)) return "/api/v1/";
