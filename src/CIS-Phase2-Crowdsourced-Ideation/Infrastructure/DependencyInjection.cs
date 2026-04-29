@@ -34,7 +34,9 @@ public static class DependencyInjection
         {
             if (connectionString.Contains("Server=localhost") || connectionString.Contains("Database=sd3"))
             {
-                options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
+                // Avoid runtime connection probing during service resolution. This allows fallback to route
+                // away from MySQL when it is down, instead of failing while constructing AppDbContext.
+                options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36)));
             }
             else
             {

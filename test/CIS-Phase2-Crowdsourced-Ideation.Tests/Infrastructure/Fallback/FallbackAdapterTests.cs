@@ -4,6 +4,7 @@ using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Repositories;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -25,8 +26,9 @@ public sealed class FallbackAdapterTests
         var http = new DefaultHttpContext();
         http.Request.Path = "/api/v2/topics";
         var accessor = new HttpContextAccessor { HttpContext = http };
+        using var services = BuildServices(mySql, mongo);
 
-        var sut = new FallbackAdapter(mySql, mongo, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
+        var sut = new FallbackAdapter(services, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
 
         sut.Topics.Should().BeSameAs(myTopics);
         await sut.SaveChangesAsync();
@@ -47,8 +49,9 @@ public sealed class FallbackAdapterTests
         var http = new DefaultHttpContext();
         http.Request.Path = "/api/v1/topics";
         var accessor = new HttpContextAccessor { HttpContext = http };
+        using var services = BuildServices(mySql, mongo);
 
-        var sut = new FallbackAdapter(mySql, mongo, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
+        var sut = new FallbackAdapter(services, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
 
         sut.Topics.Should().BeSameAs(mongoTopics);
         await sut.SaveChangesAsync();
@@ -72,7 +75,8 @@ public sealed class FallbackAdapterTests
 
         var http = new DefaultHttpContext();
         var accessor = new HttpContextAccessor { HttpContext = http };
-        var sut = new FallbackAdapter(mySql, mongo, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
+        using var services = BuildServices(mySql, mongo);
+        var sut = new FallbackAdapter(services, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
 
         http.Request.Path = "/api/v1/topics";
         sut.Topics.Should().BeSameAs(myTopics);
@@ -99,7 +103,8 @@ public sealed class FallbackAdapterTests
         var http = new DefaultHttpContext();
         http.Request.Path = "/api/v1/topics";
         var accessor = new HttpContextAccessor { HttpContext = http };
-        var sut = new FallbackAdapter(mySql, mongo, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
+        using var services = BuildServices(mySql, mongo);
+        var sut = new FallbackAdapter(services, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
 
         var act = () => _ = sut.Topics;
         act.Should().Throw<InvalidOperationException>()
@@ -120,6 +125,14 @@ public sealed class FallbackAdapterTests
             SaveChangesCalls++;
             return Task.CompletedTask;
         }
+    }
+
+    private static ServiceProvider BuildServices(IRepositoryAdapter mySql, IRepositoryAdapter mongo)
+    {
+        var services = new ServiceCollection();
+        services.AddKeyedScoped<IRepositoryAdapter>("mysql", (_, _) => mySql);
+        services.AddKeyedScoped<IRepositoryAdapter>("mongo", (_, _) => mongo);
+        return services.BuildServiceProvider();
     }
 }
 

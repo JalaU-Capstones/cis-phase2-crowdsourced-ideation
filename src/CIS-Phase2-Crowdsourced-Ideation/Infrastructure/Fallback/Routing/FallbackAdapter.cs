@@ -12,8 +12,7 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.Routing;
 /// and the <see cref="IDatabaseFallbackService"/> decision.
 /// </summary>
 public sealed class FallbackAdapter(
-    [FromKeyedServices("mysql")] IRepositoryAdapter mySql,
-    [FromKeyedServices("mongo")] IRepositoryAdapter mongo,
+    IServiceProvider serviceProvider,
     IDatabaseFallbackService fallback,
     IHttpContextAccessor httpContextAccessor,
     ILogger<FallbackAdapter> logger) : IRepositoryAdapter
@@ -33,8 +32,8 @@ public sealed class FallbackAdapter(
 
         return active switch
         {
-            DatabaseType.MySql => mySql,
-            DatabaseType.MongoDb => mongo,
+            DatabaseType.MySql => serviceProvider.GetRequiredKeyedService<IRepositoryAdapter>("mysql"),
+            DatabaseType.MongoDb => serviceProvider.GetRequiredKeyedService<IRepositoryAdapter>("mongo"),
             DatabaseType.BothDown => ThrowBothDown(path),
             _ => throw new InvalidOperationException($"Unsupported database type '{active}' for path '{path}'.")
         };
