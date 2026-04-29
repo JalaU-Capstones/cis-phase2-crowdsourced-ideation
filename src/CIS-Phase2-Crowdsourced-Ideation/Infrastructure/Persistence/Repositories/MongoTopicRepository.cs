@@ -35,7 +35,8 @@ public class MongoTopicRepository(MongoDbContext context) : ITopicRepository
 
     public async Task<bool> ExistsAsync(string id)
     {
-        return await _collection.Find(t => t.Id == id).AnyAsync();
+       return await _collection.CountDocumentsAsync(
+           Builders<Topic>.Filter.Eq(t => t.Id, id)) > 0;
     }
 
     public async Task<IEnumerable<Topic>> GetFilteredAsync(string? status, string? ownerId)

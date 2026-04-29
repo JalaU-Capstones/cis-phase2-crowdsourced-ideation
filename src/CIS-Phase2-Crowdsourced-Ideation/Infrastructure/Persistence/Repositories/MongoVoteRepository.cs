@@ -40,7 +40,8 @@ public class MongoVoteRepository(MongoDbContext context) : IVoteRepository
 
     public async Task<bool> ExistsAsync(Guid id)
     {
-        return await _collection.Find(v => v.Id == id).AnyAsync();
+      return await _collection.CountDocumentsAsync(
+         Builders<Vote>.Filter.Eq(v => v.Id, id)) > 0;
     }
 
     public async Task<int> CountByIdeaIdAsync(Guid ideaId)
