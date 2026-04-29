@@ -18,16 +18,16 @@ public sealed class FallbackAdapter(
     IHttpContextAccessor httpContextAccessor,
     ILogger<FallbackAdapter> logger) : IRepositoryAdapter
 {
-    public ITopicRepository Topics => GetActive().Topics;
-    public IIdeaRepository Ideas => GetActive().Ideas;
-    public IVoteRepository Votes => GetActive().Votes;
-    public IUserRepository Users => GetActive().Users;
+    public ITopicRepository Topics => ResolveActiveAdapter().Topics;
+    public IIdeaRepository Ideas => ResolveActiveAdapter().Ideas;
+    public IVoteRepository Votes => ResolveActiveAdapter().Votes;
+    public IUserRepository Users => ResolveActiveAdapter().Users;
 
-    public Task SaveChangesAsync() => GetActive().SaveChangesAsync();
+    public Task SaveChangesAsync() => ResolveActiveAdapter().SaveChangesAsync();
 
-    private IRepositoryAdapter GetActive()
+    private IRepositoryAdapter ResolveActiveAdapter()
     {
-        var path = httpContextAccessor.HttpContext?.Request.Path.Value ?? string.Empty;
+        var path = httpContextAccessor.HttpContext?.Request.Path.ToString() ?? string.Empty;
         var active = fallback.GetActiveDatabase(path);
         logger.LogWarning("Fallback adapter routing request path {Path} to {Database}.", path, active);
 
@@ -36,7 +36,7 @@ public sealed class FallbackAdapter(
             DatabaseType.MySql => mySql,
             DatabaseType.MongoDb => mongo,
             DatabaseType.BothDown => ThrowBothDown(path),
-            _ => mySql
+            _ => throw new InvalidOperationException($"Unsupported database type '{active}' for path '{path}'.")
         };
     }
 

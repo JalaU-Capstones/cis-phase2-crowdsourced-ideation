@@ -56,6 +56,56 @@ public sealed class FallbackAdapterTests
         mySql.SaveChangesCalls.Should().Be(0);
     }
 
+    [Fact]
+    public async Task ReEvaluatesPerCall_AndUsesCurrentRequestPath()
+    {
+        var myTopics = new Mock<ITopicRepository>().Object;
+        var mongoTopics = new Mock<ITopicRepository>().Object;
+        var mySql = new StubAdapter(myTopics);
+        var mongo = new StubAdapter(mongoTopics);
+
+        var fallback = new Mock<CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.IDatabaseFallbackService>();
+        fallback.Setup(f => f.GetActiveDatabase(It.IsAny<string>()))
+            .Returns<string>(path => path.StartsWith("/api/v2/", StringComparison.OrdinalIgnoreCase)
+                ? DatabaseType.MongoDb
+                : DatabaseType.MySql);
+
+        var http = new DefaultHttpContext();
+        var accessor = new HttpContextAccessor { HttpContext = http };
+        var sut = new FallbackAdapter(mySql, mongo, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
+
+        http.Request.Path = "/api/v1/topics";
+        sut.Topics.Should().BeSameAs(myTopics);
+        await sut.SaveChangesAsync();
+
+        http.Request.Path = "/api/v2/topics";
+        sut.Topics.Should().BeSameAs(mongoTopics);
+        await sut.SaveChangesAsync();
+
+        mySql.SaveChangesCalls.Should().Be(1);
+        mongo.SaveChangesCalls.Should().Be(1);
+        fallback.Verify(f => f.GetActiveDatabase("/api/v1/topics"), Times.AtLeastOnce);
+        fallback.Verify(f => f.GetActiveDatabase("/api/v2/topics"), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void BothDown_ThrowsInvalidOperation()
+    {
+        var mySql = new StubAdapter(new Mock<ITopicRepository>().Object);
+        var mongo = new StubAdapter(new Mock<ITopicRepository>().Object);
+        var fallback = new Mock<CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.IDatabaseFallbackService>();
+        fallback.Setup(f => f.GetActiveDatabase(It.IsAny<string>())).Returns(DatabaseType.BothDown);
+
+        var http = new DefaultHttpContext();
+        http.Request.Path = "/api/v1/topics";
+        var accessor = new HttpContextAccessor { HttpContext = http };
+        var sut = new FallbackAdapter(mySql, mongo, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
+
+        var act = () => _ = sut.Topics;
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Both databases are down.");
+    }
+
     private sealed class StubAdapter(ITopicRepository topics) : IRepositoryAdapter
     {
         public int SaveChangesCalls { get; private set; }
