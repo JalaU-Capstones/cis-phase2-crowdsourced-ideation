@@ -146,11 +146,34 @@ dotnet test --filter "FullyQualifiedName~V2"
 dotnet test --logger "console;verbosity=detailed"
 ```
 
+> **Note:** Migration tests use Testcontainers and require Docker running locally. They are excluded from the CI pipeline. To run them locally:
+> ```bash
+> dotnet test --filter "FullyQualifiedName~Migration"
+> ```
+
 ## 11. Migrating Data from MySQL to MongoDB (US 2.2)
 
-> The migration script transfers all existing MySQL data into MongoDB.
-> It is **idempotent**: safe to run multiple times (uses upsert by `_id`).
-> A validation step confirms 100% data consistency after migration.
+> **Responsibility boundary:**
+> - The **Java Phase 1** migration is solely responsible for migrating the `users` collection.
+> - The **C# Phase 2** migration (this script) only migrates `topics`, `ideas`, and `votes`.
+> - The C# script will **fail with a clear error** if any referenced user ID is missing from MongoDB, ensuring you always run Phase 1 first.
+
+### Migration order — mandatory
+
+**Step 1:** Run the Java Phase 1 user migration first (populates the `users` collection in MongoDB).
+
+**Step 2:** Run the C# Phase 2 migration below (migrates topics, ideas and votes).
+
+> Skipping Step 1 will cause the C# script to abort with:
+> `Missing users in MongoDB. Please run Phase 1 user migration first.`
+
+### About MigrationService.cs vs migrate-to-mongo.csx
+
+Both implement the same upsert + validation logic but serve different purposes:
+- `MigrationService.cs` — testable C# class used by the Testcontainers integration tests.
+- `migrate-to-mongo.csx` — standalone executable script for developers to run manually.
+
+They are independent: the script does not call the service class.
 
 ### Install dotnet-script (one time)
 ```bash
@@ -167,26 +190,37 @@ dotnet script migration/migrate-to-mongo.csx -- \
 
 ### Expected output
 ```
-=== CIS Phase 3 — Migración MySQL → MongoDB ===
-── [1/4] Migrando usuarios...
-   ✓ 42 usuarios migrados (upsert, idempotente)
-── [2/4] Migrando topics...
-   ✓ 18 topics migrados
-── [3/4] Migrando ideas...
-   ✓ 95 ideas migradas
-── [4/4] Migrando votos...
-   ✓ 310 votos migrados
+=== CIS Phase 2 -- Migration MySQL to MongoDB ===
+  MySQL : Server=localhost;Port=3307;Database=sd3;User Id=sd3user;Passwor...
+  Mongo : mongodb://localhost:27017
+  DB    : sd3
+  Scope : topics, ideas, votes (users owned by Java Phase 1)
 
-── Validando integridad...
-   ✓  users      MySQL=    42  MongoDB=    42
-   ✓  topics     MySQL=    18  MongoDB=    18
-   ✓  ideas      MySQL=    95  MongoDB=    95
-   ✓  votes      MySQL=   310  MongoDB=   310
+-- [0/4] Validating Phase 1 users in MongoDB...
+   OK - all referenced users exist in MongoDB
+-- [1/3] Migrating topics...
+   OK 18 topics migrated
+-- [2/3] Migrating ideas...
+   OK 95 ideas migrated
+-- [3/3] Migrating votes...
+   OK 310 votes migrated
 
-✅ Migración completada. 100% de consistencia verificada.
+-- Validating integrity...
+   OK       topics     MySQL=    18  MongoDB=    18
+   OK       ideas      MySQL=    95  MongoDB=    95
+   OK       votes      MySQL=   310  MongoDB=   310
+
+Migration completed. 100% data consistency verified.
 ```
 
-If `✗ MISMATCH` appears, check Docker logs and re-run (upsert guarantees idempotency).
+### If Phase 1 has not been run yet
+```
+-- [0/4] Validating Phase 1 users in MongoDB...
+   ERROR: 42 user ID(s) referenced in MySQL are missing from MongoDB.
+   Missing IDs: abc123, def456 ...
+
+   Please run Phase 1 Java user migration first, then retry.
+```
 
 ### Rollback to MySQL
 

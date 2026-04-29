@@ -6,9 +6,13 @@ using Dapper;
 namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Migration;
 
 /// <summary>
-/// Encapsula la lógica de migración MySQL → MongoDB.
-/// Diseñada para ser testeable de forma independiente del script .csx.
-/// Usa upsert (ReplaceOneAsync con IsUpsert=true) para garantizar idempotencia.
+/// Migrates topics, ideas and votes from MySQL to MongoDB.
+///
+/// Responsibility boundary:
+///   - The Java Phase 1 migration owns the `users` collection.
+///   - This service NEVER writes to `users`. It only reads, topics, ideas and votes.
+///   - A pre-validation step ensures all referenced user IDs exist in MongoDB
+///     before any data is written, preventing orphaned references.
 /// </summary>
 public sealed class MigrationService
 {
@@ -22,7 +26,6 @@ public sealed class MigrationService
         _mongoDatabase = client.GetDatabase(databaseName);
     }
 
-    // Constructor alternativo para tests que ya tienen IMongoDatabase
     public MigrationService(string mysqlConnectionString, IMongoDatabase mongoDatabase)
     {
         _mysqlConnectionString = mysqlConnectionString;
@@ -31,47 +34,71 @@ public sealed class MigrationService
 
     public async Task<MigrationResult> RunAsync()
     {
-        await using var mysql = new MySqlConnection(_mysqlConnectionString);
-        await mysql.OpenAsync();
-
-        var users  = await MigrateUsersAsync(mysql);
-        var topics = await MigrateTopicsAsync(mysql);
-        var ideas  = await MigrateIdeasAsync(mysql);
-        var votes  = await MigrateVotesAsync(mysql);
-
-        var validation = await ValidateAsync(mysql);
-
-        return new MigrationResult(users, topics, ideas, votes, validation);
-    }
-
-    // ---------------------------------------------------------------------------
-    // Migration steps
-    // ---------------------------------------------------------------------------
-
-    public async Task<long> MigrateUsersAsync(MySqlConnection mysql)
-    {
-        var rows = await mysql.QueryAsync<dynamic>(
-            "SELECT id, login, name, password FROM users");
-
-        var collection = _mongoDatabase.GetCollection<BsonDocument>("users");
-        long count = 0;
-
-        foreach (var row in rows)
+        var mysql = new MySqlConnection(_mysqlConnectionString);
+        try
         {
-            var filter = Builders<BsonDocument>.Filter.Eq("_id", (string)row.id);
-            var doc = new BsonDocument
-            {
-                ["_id"]      = (string)row.id,
-                ["Login"]    = (string)row.login,
-                ["Name"]     = (string)row.name,
-                ["Password"] = (string)row.password
-            };
-            await collection.ReplaceOneAsync(filter, doc, new ReplaceOptions { IsUpsert = true });
-            count++;
-        }
+            await mysql.OpenAsync();
 
-        return count;
+            // Pre-validation: all user IDs referenced in MySQL must exist in MongoDB
+            var missingUsers = await ValidateMissingUsersAsync(mysql);
+            if (missingUsers.Count > 0)
+                throw new InvalidOperationException(
+                    $"Missing users in MongoDB. Please run Phase 1 user migration first. " +
+                    $"Missing IDs: {string.Join(", ", missingUsers.Take(10))}" +
+                    (missingUsers.Count > 10 ? $" ... and {missingUsers.Count - 10} more." : "."));
+
+            var topics = await MigrateTopicsAsync(mysql);
+            var ideas  = await MigrateIdeasAsync(mysql);
+            var votes  = await MigrateVotesAsync(mysql);
+
+            var validation = await ValidateAsync(mysql);
+
+            return new MigrationResult(topics, ideas, votes, validation);
+        }
+        finally
+        {
+            mysql.Dispose();
+        }
     }
+
+    // ---------------------------------------------------------------------------
+    // Pre-validation
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Collects all unique OwnerId (topics, ideas) and UserId (votes) from MySQL
+    /// and checks which ones are missing in the MongoDB users collection.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ValidateMissingUsersAsync(MySqlConnection mysql)
+    {
+        var referencedIds = new HashSet<string>();
+
+        var topicOwners = await mysql.QueryAsync<string>("SELECT DISTINCT owner_id FROM topics");
+        foreach (var id in topicOwners) referencedIds.Add(id);
+
+        var ideaOwners = await mysql.QueryAsync<string>("SELECT DISTINCT owner_id FROM ideas");
+        foreach (var id in ideaOwners) referencedIds.Add(id);
+
+        var voteUsers = await mysql.QueryAsync<string>("SELECT DISTINCT user_id FROM votes");
+        foreach (var id in voteUsers) referencedIds.Add(id);
+
+        if (referencedIds.Count == 0)
+            return Array.Empty<string>();
+
+        var usersCollection = _mongoDatabase.GetCollection<BsonDocument>("users");
+        var filter = Builders<BsonDocument>.Filter.In("_id", referencedIds);
+        var existingDocs = await usersCollection.Find(filter)
+            .Project(Builders<BsonDocument>.Projection.Include("_id"))
+            .ToListAsync();
+
+        var existingIds = existingDocs.Select(d => d["_id"].AsString).ToHashSet();
+        var missing = referencedIds.Where(id => !existingIds.Contains(id)).ToList();
+        return missing;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Migration steps — NO writes to `users` collection
+    // ---------------------------------------------------------------------------
 
     public async Task<long> MigrateTopicsAsync(MySqlConnection mysql)
     {
@@ -130,8 +157,7 @@ public sealed class MigrationService
 
     public async Task<long> MigrateVotesAsync(MySqlConnection mysql)
     {
-        var rows = await mysql.QueryAsync<dynamic>(
-            "SELECT id, idea_id, user_id FROM votes");
+        var rows = await mysql.QueryAsync<dynamic>("SELECT id, idea_id, user_id FROM votes");
 
         var collection = _mongoDatabase.GetCollection<BsonDocument>("votes");
         long count = 0;
@@ -153,23 +179,23 @@ public sealed class MigrationService
     }
 
     // ---------------------------------------------------------------------------
-    // Validation
+    // Post-migration validation — verifies topics, ideas, votes only
     // ---------------------------------------------------------------------------
 
     public async Task<ValidationResult> ValidateAsync(MySqlConnection mysql)
     {
-        var mysqlUsers  = await mysql.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM users");
         var mysqlTopics = await mysql.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM topics");
         var mysqlIdeas  = await mysql.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM ideas");
         var mysqlVotes  = await mysql.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM votes");
 
-        var mongoUsers  = await _mongoDatabase.GetCollection<BsonDocument>("users").CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
-        var mongoTopics = await _mongoDatabase.GetCollection<BsonDocument>("topics").CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
-        var mongoIdeas  = await _mongoDatabase.GetCollection<BsonDocument>("ideas").CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
-        var mongoVotes  = await _mongoDatabase.GetCollection<BsonDocument>("votes").CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
+        var mongoTopics = await _mongoDatabase.GetCollection<BsonDocument>("topics")
+            .CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
+        var mongoIdeas  = await _mongoDatabase.GetCollection<BsonDocument>("ideas")
+            .CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
+        var mongoVotes  = await _mongoDatabase.GetCollection<BsonDocument>("votes")
+            .CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
 
         return new ValidationResult(
-            Users:  new CountPair(mysqlUsers,  mongoUsers),
             Topics: new CountPair(mysqlTopics, mongoTopics),
             Ideas:  new CountPair(mysqlIdeas,  mongoIdeas),
             Votes:  new CountPair(mysqlVotes,  mongoVotes)
@@ -182,7 +208,6 @@ public sealed class MigrationService
 // ---------------------------------------------------------------------------
 
 public sealed record MigrationResult(
-    long MigratedUsers,
     long MigratedTopics,
     long MigratedIdeas,
     long MigratedVotes,
@@ -192,13 +217,12 @@ public sealed record MigrationResult(
 }
 
 public sealed record ValidationResult(
-    CountPair Users,
     CountPair Topics,
     CountPair Ideas,
     CountPair Votes)
 {
     public bool IsConsistent =>
-        Users.IsMatch && Topics.IsMatch && Ideas.IsMatch && Votes.IsMatch;
+        Topics.IsMatch && Ideas.IsMatch && Votes.IsMatch;
 }
 
 public sealed record CountPair(long MySql, long Mongo)
