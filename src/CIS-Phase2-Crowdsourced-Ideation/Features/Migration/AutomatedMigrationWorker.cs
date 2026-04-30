@@ -10,7 +10,7 @@ public sealed class AutomatedMigrationWorker : BackgroundService
     private readonly MigrationSettings _settings;
     private readonly MigrationStateManager _state;
     private readonly IHttpClientFactory _httpFactory;
-    private readonly IServiceScopeFactory _scopeFactory;   
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AutomatedMigrationWorker> _logger;
 
     public AutomatedMigrationWorker(
@@ -46,6 +46,11 @@ public sealed class AutomatedMigrationWorker : BackgroundService
         try
         {
             var client = _httpFactory.CreateClient(HttpClientName);
+
+            Log("[Pre-step] Activating maintenance mode on Java Phase 1 → POST /api/v1/system/maintenance/start");
+            var startResp = await client.PostAsync("/api/v1/system/maintenance/start", content: null, ct);
+            startResp.EnsureSuccessStatusCode();
+            Log("[Pre-step] Java Phase 1 is now in maintenance (writes → 503)");
 
             Log("[Step 1/4] Triggering Java Phase 1 user migration → POST /api/v1/system/migrate");
             var migrateResp = await client.PostAsync("/api/v1/system/migrate", content: null, ct);
@@ -86,6 +91,11 @@ public sealed class AutomatedMigrationWorker : BackgroundService
             {
                 Log("[Step 3/4] DowntimeSeconds = 0 – skipping wait.");
             }
+
+            Log("[Step 3b/4] Deactivating maintenance mode on Java Phase 1 → POST /api/v1/system/maintenance/stop");
+            var stopResp = await client.PostAsync("/api/v1/system/maintenance/stop", content: null, ct);
+            stopResp.EnsureSuccessStatusCode();
+            Log("[Step 3b/4] Java Phase 1 maintenance deactivated");
 
             Log("[Step 4/4] Sending sunset signal to Java Phase 1 → POST /api/v1/system/sunset");
             var sunsetResp = await client.PostAsync("/api/v1/system/sunset", content: null, ct);

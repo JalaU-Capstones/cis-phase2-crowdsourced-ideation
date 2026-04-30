@@ -1,3 +1,4 @@
+// AutomatedMigrationWorkerTests.cs
 using System.Net;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Migration;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure;
@@ -13,7 +14,6 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Migration;
 
 public sealed class AutomatedMigrationWorkerTests
 {
-    
     private static IHttpClientFactory HttpFactory(params HttpStatusCode[] codes)
     {
         var queue   = new Queue<HttpStatusCode>(codes);
@@ -32,9 +32,6 @@ public sealed class AutomatedMigrationWorkerTests
         return factory.Object;
     }
 
-    /// <summary>
-    /// Builds an IServiceScopeFactory that resolves IMigrationService from the provided mock
-    /// </summary>
     private static IServiceScopeFactory ScopeFactory(IMigrationService migSvc)
     {
         var sp = new ServiceCollection()
@@ -51,7 +48,7 @@ public sealed class AutomatedMigrationWorkerTests
     private static MigrationResult BadResult()
         => new(5, 20, 50, new ValidationResult(
             new CountPair(5, 5),
-            new CountPair(20, 18), // mismatch
+            new CountPair(20, 18),
             new CountPair(50, 50)));
 
     private static AutomatedMigrationWorker Build(
@@ -74,7 +71,6 @@ public sealed class AutomatedMigrationWorkerTests
             ScopeFactory(svc),
             NullLogger<AutomatedMigrationWorker>.Instance);
     }
-    
 
     [Fact]
     public async Task ExecuteAsync_RunOnStartupFalse_NothingRuns()
@@ -90,7 +86,6 @@ public sealed class AutomatedMigrationWorkerTests
         state.IsMigrationRunning.Should().BeFalse();
         state.HasMigrated.Should().BeFalse();
     }
-    
 
     [Fact]
     public async Task RunMigrationAsync_HappyPath_SetsHasMigratedAndClearsRunning()
@@ -99,17 +94,18 @@ public sealed class AutomatedMigrationWorkerTests
         var migSvc = new Mock<IMigrationService>();
         migSvc.Setup(m => m.RunAsync()).ReturnsAsync(GoodResult());
 
-        var worker = Build(state, HttpFactory(HttpStatusCode.OK, HttpStatusCode.OK), migSvc.Object);
+        var worker = Build(state,
+            HttpFactory(HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK),
+            migSvc.Object);
         await worker.RunMigrationAsync(CancellationToken.None);
 
         state.HasMigrated.Should().BeTrue();
         state.IsMigrationRunning.Should().BeFalse();
         migSvc.Verify(m => m.RunAsync(), Times.Once);
     }
-    
 
     [Fact]
-    public async Task RunMigrationAsync_JavaMigrateFails_NoCSharpMigrationAndFlagsReset()
+    public async Task RunMigrationAsync_JavaMaintenanceStartFails_AbortsAndResetsFlags()
     {
         var state  = new MigrationStateManager();
         var migSvc = new Mock<IMigrationService>();
@@ -121,7 +117,20 @@ public sealed class AutomatedMigrationWorkerTests
         state.IsMigrationRunning.Should().BeFalse();
         migSvc.Verify(m => m.RunAsync(), Times.Never);
     }
-    
+
+    [Fact]
+    public async Task RunMigrationAsync_JavaMigrateFails_NoCSharpMigrationAndFlagsReset()
+    {
+        var state  = new MigrationStateManager();
+        var migSvc = new Mock<IMigrationService>();
+
+        var worker = Build(state, HttpFactory(HttpStatusCode.OK, HttpStatusCode.InternalServerError), migSvc.Object);
+        await worker.RunMigrationAsync(CancellationToken.None);
+
+        state.HasMigrated.Should().BeFalse();
+        state.IsMigrationRunning.Should().BeFalse();
+        migSvc.Verify(m => m.RunAsync(), Times.Never);
+    }
 
     [Fact]
     public async Task RunMigrationAsync_MigrationServiceThrows_FlagsReset()
@@ -131,13 +140,12 @@ public sealed class AutomatedMigrationWorkerTests
         migSvc.Setup(m => m.RunAsync())
               .ThrowsAsync(new InvalidOperationException("Missing users"));
 
-        var worker = Build(state, HttpFactory(HttpStatusCode.OK), migSvc.Object);
+        var worker = Build(state, HttpFactory(HttpStatusCode.OK, HttpStatusCode.OK), migSvc.Object);
         await worker.RunMigrationAsync(CancellationToken.None);
 
         state.HasMigrated.Should().BeFalse();
         state.IsMigrationRunning.Should().BeFalse();
     }
-    
 
     [Fact]
     public async Task RunMigrationAsync_InconsistentResult_NoSunsetAndHasMigratedFalse()
@@ -163,9 +171,8 @@ public sealed class AutomatedMigrationWorkerTests
         await worker.RunMigrationAsync(CancellationToken.None);
 
         state.HasMigrated.Should().BeFalse();
-        callCount.Should().Be(1, "only /migrate fires — /sunset must NOT be called");
+        callCount.Should().Be(3, "maintenance/start, migrate, maintenance/stop (sunset never called)");
     }
-    
 
     [Fact]
     public async Task RunMigrationAsync_JavaSunsetFails_HasMigratedStaysFalse()
@@ -175,14 +182,13 @@ public sealed class AutomatedMigrationWorkerTests
         migSvc.Setup(m => m.RunAsync()).ReturnsAsync(GoodResult());
 
         var worker = Build(state,
-            HttpFactory(HttpStatusCode.OK, HttpStatusCode.InternalServerError),
+            HttpFactory(HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.InternalServerError),
             migSvc.Object);
         await worker.RunMigrationAsync(CancellationToken.None);
 
         state.HasMigrated.Should().BeFalse();
         state.IsMigrationRunning.Should().BeFalse();
     }
-    
 
     [Fact]
     public async Task RunMigrationAsync_ZeroDowntime_CompletesQuickly()
@@ -192,7 +198,7 @@ public sealed class AutomatedMigrationWorkerTests
         migSvc.Setup(m => m.RunAsync()).ReturnsAsync(GoodResult());
 
         var worker = Build(state,
-            HttpFactory(HttpStatusCode.OK, HttpStatusCode.OK),
+            HttpFactory(HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK),
             migSvc.Object,
             downtimeSeconds: 0);
 
@@ -203,7 +209,6 @@ public sealed class AutomatedMigrationWorkerTests
         state.HasMigrated.Should().BeTrue();
         sw.ElapsedMilliseconds.Should().BeLessThan(2_000);
     }
-    
 
     [Fact]
     public async Task RunMigrationAsync_CancelledDuringDowntime_FlagsReset()
@@ -215,7 +220,7 @@ public sealed class AutomatedMigrationWorkerTests
         using var cts = new CancellationTokenSource(millisecondsDelay: 150);
 
         var worker = Build(state,
-            HttpFactory(HttpStatusCode.OK, HttpStatusCode.OK),
+            HttpFactory(HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK, HttpStatusCode.OK),
             migSvc.Object,
             downtimeSeconds: 60);
 
