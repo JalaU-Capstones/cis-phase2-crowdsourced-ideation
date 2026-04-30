@@ -1,4 +1,3 @@
-// AutomatedMigrationWorkerTests.cs
 using System.Net;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Migration;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure;
@@ -171,7 +170,7 @@ public sealed class AutomatedMigrationWorkerTests
         await worker.RunMigrationAsync(CancellationToken.None);
 
         state.HasMigrated.Should().BeFalse();
-        callCount.Should().Be(3, "maintenance/start, migrate, maintenance/stop (sunset never called)");
+        callCount.Should().Be(2, "only maintenance/start and migrate are called; stop and sunset never reached");
     }
 
     [Fact]
