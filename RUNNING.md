@@ -576,3 +576,33 @@ curl "http://localhost:5257/api/v1/statistics/topic/$TOPIC_ID/summary"
 # V2
 curl "http://localhost:5257/api/v2/statistics/topic/$TOPIC_ID/summary"
 ```
+
+## 13. Automated ELT Migration — US 2.3 (Blue-Green / API Sunsetting)
+
+### Overview
+
+The migration follows a four-phase Blue-Green strategy:
+
+| Phase | State | v1 behavior | v2 behavior |
+|-------|-------|-------------|-------------|
+| 1 — Normal | Both flags false | Full read+write | Full read+write |
+| 2 — Migration running | `IsMigrationRunning=true` | GET only (writes → **503**) | GET only (writes → **503**) |
+| 3 — Post-migration | `HasMigrated=true` | GET + `Warning: 299` header; writes → **410 Gone** | Full read+write |
+
+### How to trigger the migration
+
+```bash
+dotnet run --project src/CIS-Phase2-Crowdsourced-Ideation \
+  -- \
+  --MigrationSettings:RunOnStartup=true \
+  --MigrationSettings:DowntimeSeconds=30
+```
+
+- `RunOnStartup` — set to `true` to activate the worker on startup (default: `false`).
+- `DowntimeSeconds` — seconds to wait in maintenance mode after Phase 2 migration
+  completes before sending the sunset signal to Java Phase 1 (default: `30`).
+
+> Both flags can also be permanently set in `appsettings.json` under
+> the `"MigrationSettings"` key; CLI args take precedence.
+
+### What the worker does (step by step)
