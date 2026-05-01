@@ -1,6 +1,5 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
-using CIS.Phase2.CrowdsourcedIdeation.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -129,9 +128,6 @@ public static class DependencyInjection
             });
 
         services.AddAuthorization();
-
-        // External user lookup (Phase 1 Java API), used by V2 user resolution when JWT only has login.
-        services.AddHttpClient<IUserResolver, UserResolver>();
 
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(c =>

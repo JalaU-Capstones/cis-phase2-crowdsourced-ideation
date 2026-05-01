@@ -2,7 +2,6 @@ using CIS.Phase2.CrowdsourcedIdeation.Features;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Migration;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Middleware;
-using CIS.Phase2.CrowdsourcedIdeation.Services;
 using Microsoft.AspNetCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,8 +11,6 @@ builder.Services.AddFeatures();
 builder.Services.AddMigrationServices(builder.Configuration);
 
 var app = builder.Build();
-
-UserResolverAccessor.Current = app.Services.GetService<IUserResolver>();
 
 app.UseExceptionHandler(errorApp =>
 {

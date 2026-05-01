@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
-using CIS.Phase2.CrowdsourcedIdeation.Services;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Features.Shared;
 
@@ -51,38 +50,26 @@ public static class UserIdentityResolver
         // V2 (MongoDB): Phase 1 tokens contain `sub` = login, with no external UUID claim.
         // We resolve the external UUID by:
         // 1) Using an existing Mongo user record keyed by login (already synced).
-        // 2) If missing, calling the Java User Management API to fetch the user's UUID, then
-        //    persisting it locally (Mongo) and returning that UUID.
+        // 2) If missing, we throw an exception because C# no longer calls the Java API.
         var login =
             user.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user.FindFirstValue("sub")
             ?? user.Identity?.Name;
-
-        var name = user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name) ?? login;
 
         if (string.IsNullOrWhiteSpace(login))
             throw new UnauthorizedAccessException("User identity not found or invalid");
 
         login = login.Trim();
 
-        // First: local Mongo lookup by login.
+        // Local Mongo lookup by login.
         var dbUser = await adapter.Users.GetByLoginAsync(login);
         if (dbUser is not null && Guid.TryParse(dbUser.Id, out var existingUserId))
         {
             return existingUserId;
         }
 
-        // Not found locally: fetch from Java API and cache in Mongo.
-        var resolver = UserResolverAccessor.Current;
-        if (resolver is null)
-            throw new UnauthorizedAccessException("External user resolver not configured");
-
-        var external = await resolver.GetByLoginAsync(login);
-        if (!Guid.TryParse(external.Id, out var externalUserId))
-            throw new UnauthorizedAccessException("External user identity not found or invalid");
-
-        await EnsureMongoUserExistsAsync(adapter, externalUserId, external.Login ?? login, external.Name ?? name);
-        return externalUserId;
+        throw new UnauthorizedAccessException(
+            $"User '{login}' not found in MongoDB. Please ensure the Phase 1 user migration has been run.");
     }
 
     private static bool TryGetUserId(ClaimsPrincipal user, string? sub, out Guid userId)
