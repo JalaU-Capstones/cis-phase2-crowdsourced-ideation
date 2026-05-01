@@ -577,32 +577,108 @@ curl "http://localhost:5257/api/v1/statistics/topic/$TOPIC_ID/summary"
 curl "http://localhost:5257/api/v2/statistics/topic/$TOPIC_ID/summary"
 ```
 
+
 ## 13. Automated ELT Migration — US 2.3 (Blue-Green / API Sunsetting)
 
 ### Overview
+The migration follows a three‑phase Blue‑Green strategy coordinated via **command‑line flags** (no HTTP endpoints). Each phase requires restarting the Java Phase 1 API with different JVM arguments, plus a one‑time execution of the C# worker.
 
-The migration follows a four-phase Blue-Green strategy:
+| Phase | Java flag | C# state | v1 behavior | v2 behavior |
+|-------|-----------|----------|-------------|-------------|
+| 1 — Normal | *(none)* | `IsMigrationRunning=false` <br> `HasMigrated=false` | Full read+write | Full read+write |
+| 2 — Migration running | `-Dmigration.maintenance=true` | `IsMigrationRunning=true` | GET only (writes → **503**) | GET only (writes → **503**) |
+| 3 — Post‑migration | `-Dsunset.v1=true` | `HasMigrated=true` | GET + `Warning: 299` header; writes → **410 Gone** | Full read+write |
 
-| Phase | State | v1 behavior | v2 behavior |
-|-------|-------|-------------|-------------|
-| 1 — Normal | Both flags false | Full read+write | Full read+write |
-| 2 — Migration running | `IsMigrationRunning=true` | GET only (writes → **503**) | GET only (writes → **503**) |
-| 3 — Post-migration | `HasMigrated=true` | GET + `Warning: 299` header; writes → **410 Gone** | Full read+write |
+### Mandatory execution order
 
-### How to trigger the migration
+1. **Migrate users (Java) — offline**   
+   Stop any running Java API instance. Use the `migrate` Spring profile to perform the MySQL → MongoDB user migration without exposing the API:
+   ```bash
+   mvn spring-boot:run -Dspring-boot.run.profiles=migrate
+   ```
+If you don’t have the Maven wrapper, install it with `mvn wrapper:wrapper` or use `mvn`.
 
+2. **Start Java in maintenance mode**
+   ```bash
+   mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Dmigration.maintenance=true"
+   ```
+   This blocks all writes on both `/api/v1/**` and `/api/v2/**` with **503 Service Unavailable**.
+
+3. **Run the C# migration (topics, ideas, votes)**
+   ```bash
+   dotnet run --project src/CIS-Phase2-Crowdsourced-Ideation \
+     -- \
+     --MigrationSettings:RunOnStartup=true \
+     --MigrationSettings:DowntimeSeconds=30
+   ```
+  * `RunOnStartup` – set to `true` to execute the worker immediately (default: `false`).
+  * `DowntimeSeconds` – seconds the C# API stays in maintenance mode after its own migration finishes, before activating the `HasMigrated` flag.
+
+   The worker will:
+  * Read all topics, ideas and votes from MySQL.
+  * Upsert them into MongoDB (idempotent).
+  * Validate that MySQL and MongoDB counts match exactly.
+  * Wait the configured downtime, then set `HasMigrated = true`.
+
+   If validation fails, the worker logs the error and clears `IsMigrationRunning` so the system reverts to dual‑API mode.
+
+4. **Restart Java in sunset mode**
+   Stop the Java process (Ctrl+C) and start it with:
+   ```bash
+   mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Dsunset.v1=true"
+   ```
+   Now:
+  * POST/PUT/DELETE `/api/v1/**` → **410 Gone**
+  * GET `/api/v1/**` → **200** with `Warning: 299` header
+  * `/api/v2/**` operates normally
+
+### C# worker behaviour (internal)
+The `AutomatedMigrationWorker` no longer calls any Java HTTP endpoint. It only manages the C#‑side `MigrationStateManager` flags. The `MigrationSunsettingMiddleware` enforces the same rules as Java:
+* During `IsMigrationRunning` → blocks writes on both API versions with **503**.
+* After `HasMigrated` → permanently disables v1 writes (**410**) and adds the **Warning** header to v1 reads.
+
+### Configuration reference
+`appsettings.json` / CLI arguments:
+```json
+"MigrationSettings": {
+  "RunOnStartup": false,
+  "DowntimeSeconds": 30
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| RunOnStartup | false | When `true`, the worker runs immediately on application startup. |
+| DowntimeSeconds | 30 | Seconds to hold the C# API in maintenance mode after its own migration succeeds. |
+
+### Testing the full flow
 ```bash
+# 1. Start from scratch
+docker compose down -v && docker compose up -d
+
+# 2. Populate MySQL with some test data (use the C# API v1 endpoints)
+
+# 3. Java: migrate users
+mvn spring-boot:run -Dspring-boot.run.profiles=migrate
+
+# 4. Java: start in maintenance
+mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Dmigration.maintenance=true"
+
+# 5. C#: run migration
 dotnet run --project src/CIS-Phase2-Crowdsourced-Ideation \
   -- \
   --MigrationSettings:RunOnStartup=true \
-  --MigrationSettings:DowntimeSeconds=30
+  --MigrationSettings:DowntimeSeconds=10
+
+# 6. Java: restart in sunset
+#    (stop the maintenance instance first)
+mvn spring-boot:run -Dspring-boot.run.jvmArguments="-Dsunset.v1=true"
+
+# 7. Verify
+#    - POST /api/v1/topics → 410 (C#) / POST /api/v1/users → 410 (Java)
+#    - GET  /api/v1/topics → 200 + Warning header
+#    - POST /api/v2/topics → 201 (back to normal)
 ```
 
-- `RunOnStartup` — set to `true` to activate the worker on startup (default: `false`).
-- `DowntimeSeconds` — seconds to wait in maintenance mode after Phase 2 migration
-  completes before sending the sunset signal to Java Phase 1 (default: `30`).
-
-> Both flags can also be permanently set in `appsettings.json` under
-> the `"MigrationSettings"` key; CLI args take precedence.
-
-### What the worker does (step by step)
+### Rollback
+To revert to dual‑API mode before the sunset phase, simply restart the Java API without any special flags and restart the C# API. The MySQL database is never modified by the migration, so `/api/v1/` data remains intact.
