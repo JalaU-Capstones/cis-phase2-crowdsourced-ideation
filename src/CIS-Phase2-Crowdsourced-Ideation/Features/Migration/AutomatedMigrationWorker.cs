@@ -5,24 +5,19 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Features.Migration;
 
 public sealed class AutomatedMigrationWorker : BackgroundService
 {
-    public const string HttpClientName = "JavaPhase1";
-
     private readonly MigrationSettings _settings;
     private readonly MigrationStateManager _state;
-    private readonly IHttpClientFactory _httpFactory;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AutomatedMigrationWorker> _logger;
 
     public AutomatedMigrationWorker(
         IOptions<MigrationSettings>       settings,
         MigrationStateManager             state,
-        IHttpClientFactory                httpFactory,
         IServiceScopeFactory              scopeFactory,
         ILogger<AutomatedMigrationWorker> logger)
     {
         _settings     = settings.Value;
         _state        = state;
-        _httpFactory  = httpFactory;
         _scopeFactory = scopeFactory;
         _logger       = logger;
     }
@@ -40,24 +35,12 @@ public sealed class AutomatedMigrationWorker : BackgroundService
 
     public async Task RunMigrationAsync(CancellationToken ct)
     {
-        Log("=== Automated ELT Migration Starting ===");
+        Log("=== Automated C# Phase 2 Migration Starting ===");
         _state.SetMigrationRunning(true);
 
         try
         {
-            var client = _httpFactory.CreateClient(HttpClientName);
-
-            Log("[Pre-step] Activating maintenance mode on Java Phase 1 → POST /api/v1/system/maintenance/start");
-            var startResp = await client.PostAsync("/api/v1/system/maintenance/start", content: null, ct);
-            startResp.EnsureSuccessStatusCode();
-            Log("[Pre-step] Java Phase 1 is now in maintenance (writes → 503)");
-
-            Log("[Step 1/4] Triggering Java Phase 1 user migration → POST /api/v1/system/migrate");
-            var migrateResp = await client.PostAsync("/api/v1/system/migrate", content: null, ct);
-            migrateResp.EnsureSuccessStatusCode();
-            Log($"[Step 1/4] Java Phase 1 migration complete. HTTP {(int)migrateResp.StatusCode}");
-
-            Log("[Step 2/4] Running C# Phase 2 migration (topics, ideas, votes) …");
+            Log("[Step 1/2] Running C# Phase 2 migration (topics, ideas, votes) …");
             MigrationResult result;
 
             await using (var scope = _scopeFactory.CreateAsyncScope())
@@ -80,27 +63,17 @@ public sealed class AutomatedMigrationWorker : BackgroundService
                     $"Ideas={result.Validation.Ideas.MySql}/{result.Validation.Ideas.Mongo}, " +
                     $"Votes={result.Validation.Votes.MySql}/{result.Validation.Votes.Mongo}");
 
-            Log("[Step 2/4] Phase 2 migration complete – 100 % data consistency verified.");
+            Log("[Step 1/2] Phase 2 migration complete – 100 % data consistency verified.");
 
             if (_settings.DowntimeSeconds > 0)
             {
-                Log($"[Step 3/4] Waiting {_settings.DowntimeSeconds}s downtime window …");
+                Log($"[Step 2/2] Waiting {_settings.DowntimeSeconds}s downtime window …");
                 await Task.Delay(TimeSpan.FromSeconds(_settings.DowntimeSeconds), ct);
             }
             else
             {
-                Log("[Step 3/4] DowntimeSeconds = 0 – skipping wait.");
+                Log("[Step 2/2] DowntimeSeconds = 0 – skipping wait.");
             }
-
-            Log("[Step 3b/4] Deactivating maintenance mode on Java Phase 1 → POST /api/v1/system/maintenance/stop");
-            var stopResp = await client.PostAsync("/api/v1/system/maintenance/stop", content: null, ct);
-            stopResp.EnsureSuccessStatusCode();
-            Log("[Step 3b/4] Java Phase 1 maintenance deactivated");
-
-            Log("[Step 4/4] Sending sunset signal to Java Phase 1 → POST /api/v1/system/sunset");
-            var sunsetResp = await client.PostAsync("/api/v1/system/sunset", content: null, ct);
-            sunsetResp.EnsureSuccessStatusCode();
-            Log($"[Step 4/4] Java Phase 1 sunset confirmed. HTTP {(int)sunsetResp.StatusCode}");
 
             _state.SetHasMigrated(true);
             Log("=== Migration completed. /api/v2/ is the primary API. /api/v1/ is permanently deprecated. ===");
