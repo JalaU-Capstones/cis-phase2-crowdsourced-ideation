@@ -33,7 +33,9 @@ public static class DependencyInjection
         {
             if (connectionString.Contains("Server=localhost") || connectionString.Contains("Database=sd3"))
             {
-                options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
+                // Avoid runtime connection probing during service resolution. This allows fallback to route
+                // away from MySQL when it is down, instead of failing while constructing AppDbContext.
+                options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 36)));
             }
             else
             {
@@ -42,24 +44,19 @@ public static class DependencyInjection
             }
         });
 
-        // Always register MongoDB for V2 dual persistence
-        var mongoConnection = configuration.GetConnectionString("MongoDbConnection") ?? "mongodb://localhost:27017";
-        services.AddSingleton(new MongoDbContext(mongoConnection, "sd3"));
-        services.AddScoped<MongoDbAdapter>();
+        // Always register MongoDB context (V2 persistence and fallback target).
+        // Resolve connection settings from IConfiguration at service resolution time so
+        // test host configuration overrides are honored.
+        services.AddSingleton(sp =>
+        {
+            var cfg = sp.GetRequiredService<IConfiguration>();
+            var mongoConnection = cfg.GetConnectionString("MongoDbConnection") ?? "mongodb://localhost:27017";
+            return new MongoDbContext(mongoConnection, "sd3");
+        });
 
-        // Always register MySQL for V1
-        services.AddScoped<MySqlAdapter>();
-            
-        // Register default persistence adapter based on config
-        var provider = configuration["Persistence:Provider"] ?? "MySQL";
-        if (provider.Equals("MongoDB", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddScoped<IRepositoryAdapter>(sp => sp.GetRequiredService<MongoDbAdapter>());
-        }
-        else
-        {
-            services.AddScoped<IRepositoryAdapter>(sp => sp.GetRequiredService<MySqlAdapter>());
-        }
+        // Emergency fallback mechanism (health probes + per-request adapter routing + write blocking middleware).
+        // This registers IRepositoryAdapter as a fallback-aware adapter.
+        services.AddDatabaseFallback(configuration);
 
         // The secret key from Phase 1 (Java/Spring Boot) is configured in appsettings.json.
         // Different Phase 1 setups represent the same HMAC key differently:

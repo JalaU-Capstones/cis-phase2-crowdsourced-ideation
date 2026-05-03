@@ -103,41 +103,17 @@ public static class UserIdentityResolver
             Password = "external"
         };
 
-        await adapter.Users.AddAsync(user);
-        await adapter.SaveChangesAsync();
-    }
+         await adapter.Users.AddAsync(user);
+         await adapter.SaveChangesAsync();
+     }
 
-    private static async Task EnsureMongoUserExistsAsync(IRepositoryAdapter adapter, Guid userId, string? login, string? name)
-    {
-        var id = userId.ToString();
-        if (await adapter.Users.ExistsAsync(id))
-            return;
+     private static string NormalizeLogin(string login)
+     {
+         var v = (login ?? string.Empty).Trim();
+         if (string.IsNullOrWhiteSpace(v))
+             return "unknown";
 
-        var normalizedLogin = (login ?? id).Trim();
-        if (string.IsNullOrWhiteSpace(normalizedLogin))
-            normalizedLogin = "unknown";
-
-        var normalizedName = (name ?? normalizedLogin).Trim();
-
-        var user = new UserRecord
-        {
-            Id = id,
-            Login = normalizedLogin,
-            Name = normalizedName,
-            Password = "external"
-        };
-
-        await adapter.Users.AddAsync(user);
-        await adapter.SaveChangesAsync();
-    }
-
-    private static string NormalizeLogin(string login)
-    {
-        var v = (login ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(v))
-            return "unknown";
-
-        // Legacy schema: users.login is VARCHAR(20).
-        return v.Length <= 20 ? v : v[..20];
-    }
-}
+         // Legacy schema: users.login is VARCHAR(20).
+         return v.Length <= 20 ? v : v[..20];
+     }
+ }

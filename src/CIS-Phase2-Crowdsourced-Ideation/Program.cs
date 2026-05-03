@@ -16,7 +16,15 @@ app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
     {
-        context.Response.StatusCode  = 500;
+        var ex = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        if (ex is not null)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("GlobalExceptionHandler");
+            logger.LogError(ex, "Unhandled exception for {Method} {Path}", context.Request.Method, context.Request.Path);
+        }
+
+        context.Response.StatusCode = 500;
         context.Response.ContentType = "application/json";
         await context.Response.WriteAsync(
             "{\"error\": \"An internal server error occurred. Please try again later.\"}");
@@ -36,6 +44,7 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<MigrationSunsettingMiddleware>(); 
 
 app.UseAuthentication();
+app.UseMiddleware<DatabaseFallbackMiddleware>();
 app.UseAuthorization();
 
 app.MapFeatures();
