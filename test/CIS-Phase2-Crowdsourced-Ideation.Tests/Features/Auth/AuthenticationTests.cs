@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Xunit;
@@ -23,6 +24,14 @@ public class AuthenticationTests : IClassFixture<WebApplicationFactory<Program>>
     {
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            builder.ConfigureAppConfiguration((_, cfg) =>
+            {
+                cfg.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Fallback:Enabled"] = "false"
+                });
+            });
+
             builder.ConfigureServices(services =>
             {
                 var dbDescriptor = services.SingleOrDefault(

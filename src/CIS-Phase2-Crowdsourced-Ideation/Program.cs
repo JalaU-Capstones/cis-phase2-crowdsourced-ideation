@@ -1,6 +1,6 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure;
-using CIS.Phase2.CrowdsourcedIdeation.Services;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.Middleware;
 using Microsoft.AspNetCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,14 +10,20 @@ builder.Services.AddFeatures();
 
 var app = builder.Build();
 
-// Some services are constructed manually in endpoint code; expose the user resolver for V2 flows.
-UserResolverAccessor.Current = app.Services.GetService<IUserResolver>();
 
 // Global Exception Handler to avoid leaking internal details
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
     {
+        var ex = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        if (ex is not null)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("GlobalExceptionHandler");
+            logger.LogError(ex, "Unhandled exception for {Method} {Path}", context.Request.Method, context.Request.Path);
+        }
+
         context.Response.StatusCode = 500;
         context.Response.ContentType = "application/json";
         await context.Response.WriteAsync("{\"error\": \"An internal server error occurred. Please try again later.\"}");
@@ -35,6 +41,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseAuthentication();
+app.UseMiddleware<DatabaseFallbackMiddleware>();
 app.UseAuthorization();
 
 app.MapFeatures();

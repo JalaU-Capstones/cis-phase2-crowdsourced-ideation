@@ -29,6 +29,7 @@ public sealed class GetIdeasByTopicEndpointTests
                 cfg.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:DefaultConnection"] = "Server=localhost;Database=sd3;User=sd3user;Password=sd3pass;",
+                    ["Fallback:Enabled"] = "false",
                     ["Jwt:SecretKey"] = jwtKey,
                     ["Jwt:RequireHttpsMetadata"] = "false"
                 });
