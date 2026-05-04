@@ -48,8 +48,9 @@ public static class UserIdentityResolver
     private static async Task<Guid> ResolveOrProvisionMongoUserIdAsync(IRepositoryAdapter adapter, ClaimsPrincipal user)
     {
         // V2 (MongoDB): Phase 1 tokens contain `sub` = login, with no external UUID claim.
-        // We resolve the user by looking up the local MongoDB record using the login from the JWT.
-        // All users should have been migrated from Phase 1 Java User Management API during Phase 1 migration.
+        // We resolve the external UUID by:
+        // 1) Using an existing Mongo user record keyed by login (already synced).
+        // 2) If missing, we throw an exception because C# no longer calls the Java API.
         var login =
             user.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? user.FindFirstValue("sub")
@@ -60,18 +61,15 @@ public static class UserIdentityResolver
 
         login = login.Trim();
 
-        // Look up the user in local Mongo using the login from the JWT token.
-        // This user should already exist from the Phase 1 migration.
+        // Local Mongo lookup by login.
         var dbUser = await adapter.Users.GetByLoginAsync(login);
         if (dbUser is not null && Guid.TryParse(dbUser.Id, out var existingUserId))
         {
             return existingUserId;
         }
 
-        // User not found in MongoDB. This indicates either:
-        // 1) Phase 1 migration was not run before Phase 2 migration, or
-        // 2) The user does not exist in Phase 1 (invalid JWT token from Phase 1 API).
-        throw new UnauthorizedAccessException($"User '{login}' not found in local database. Ensure Phase 1 user migration has been completed.");
+        throw new UnauthorizedAccessException(
+            $"User '{login}' not found in MongoDB. Please ensure the Phase 1 user migration has been run.");
     }
 
     private static bool TryGetUserId(ClaimsPrincipal user, string? sub, out Guid userId)

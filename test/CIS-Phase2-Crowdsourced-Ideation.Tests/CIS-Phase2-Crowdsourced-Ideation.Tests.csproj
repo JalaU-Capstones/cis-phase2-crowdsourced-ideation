@@ -29,7 +29,8 @@
     <PackageReference Include="Testcontainers.MySql" Version="3.10.0" />
     <PackageReference Include="Testcontainers.MongoDb" Version="3.10.0" />
     <PackageReference Include="MySqlConnector" Version="2.3.7" />
-    <PackageReference Include="Dapper" Version="2.1.35" />
+    <PackageReference Include="Dapper" Version="2.1.72" />
+
 
     <!-- Coverage -->
     <PackageReference Include="coverlet.collector" Version="6.0.4" />

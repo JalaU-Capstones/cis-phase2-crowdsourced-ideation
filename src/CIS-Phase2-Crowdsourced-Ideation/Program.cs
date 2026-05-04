@@ -1,5 +1,7 @@
 using CIS.Phase2.CrowdsourcedIdeation.Features;
+using CIS.Phase2.CrowdsourcedIdeation.Features.Migration;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Middleware;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.Middleware;
 using Microsoft.AspNetCore.Diagnostics;
 
@@ -7,11 +9,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddFeatures();
+builder.Services.AddMigrationServices(builder.Configuration);
 
 var app = builder.Build();
 
-
-// Global Exception Handler to avoid leaking internal details
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
@@ -26,7 +27,8 @@ app.UseExceptionHandler(errorApp =>
 
         context.Response.StatusCode = 500;
         context.Response.ContentType = "application/json";
-        await context.Response.WriteAsync("{\"error\": \"An internal server error occurred. Please try again later.\"}");
+        await context.Response.WriteAsync(
+            "{\"error\": \"An internal server error occurred. Please try again later.\"}");
     });
 });
 
@@ -39,6 +41,8 @@ if (app.Environment.IsDevelopment())
         c.SwaggerEndpoint("/swagger/v2/swagger.json", "V2 (MongoDB)");
     });
 }
+
+app.UseMiddleware<MigrationSunsettingMiddleware>(); 
 
 app.UseAuthentication();
 app.UseMiddleware<DatabaseFallbackMiddleware>();
