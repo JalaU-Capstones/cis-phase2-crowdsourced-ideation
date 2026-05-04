@@ -24,5 +24,15 @@ public sealed class IdeaConfigurationTests
         var idProp = entityType!.FindProperty(nameof(Idea.Id));
         idProp!.GetColumnName().Should().Be("id");
         idProp!.GetMaxLength().Should().Be(36);
+
+        entityType.FindProperty(nameof(Idea.TopicId))!.GetColumnName().Should().Be("topic_id");
+        entityType.FindProperty(nameof(Idea.TopicId))!.GetMaxLength().Should().Be(36);
+        entityType.FindProperty(nameof(Idea.OwnerId))!.GetColumnName().Should().Be("owner_id");
+        entityType.FindProperty(nameof(Idea.OwnerId))!.GetMaxLength().Should().Be(36);
+        entityType.FindProperty(nameof(Idea.Content))!.GetColumnName().Should().Be("content");
+
+        // Relationship metadata (FKs).
+        entityType.GetForeignKeys().Should().ContainSingle(fk =>
+            fk.Properties.Any(p => p.Name == nameof(Idea.TopicId)));
     }
 }

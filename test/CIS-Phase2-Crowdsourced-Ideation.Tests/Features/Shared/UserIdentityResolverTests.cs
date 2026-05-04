@@ -62,6 +62,59 @@ public sealed class UserIdentityResolverTests
     }
 
     [Fact]
+    public async Task ResolveOrProvisionUserIdAsync_WhenUserAlreadyExists_DoesNotProvision()
+    {
+        var userId = Guid.NewGuid();
+        var principal = CreateUser(("sub", userId.ToString()), ("login", "l1"));
+        _userRepoMock.Setup(r => r.ExistsAsync(userId.ToString())).ReturnsAsync(true);
+
+        var result = await UserIdentityResolver.ResolveOrProvisionUserIdAsync(_adapterMock.Object, principal);
+
+        result.Should().Be(userId);
+        _userRepoMock.Verify(r => r.AddAsync(It.IsAny<UserRecord>()), Times.Never);
+        _adapterMock.Verify(a => a.SaveChangesAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveOrProvisionUserIdAsync_WhenUserIdClaimPresent_UsesIt()
+    {
+        var userId = Guid.NewGuid();
+        var principal = CreateUser(("sub", "not-a-guid"), ("userId", userId.ToString()), ("login", "l1"));
+        _userRepoMock.Setup(r => r.ExistsAsync(userId.ToString())).ReturnsAsync(true);
+
+        var result = await UserIdentityResolver.ResolveOrProvisionUserIdAsync(_adapterMock.Object, principal);
+
+        result.Should().Be(userId);
+    }
+
+    [Fact]
+    public async Task ResolveOrProvisionUserIdAsync_WhenLoginWhitespace_NormalizesToUnknown()
+    {
+        var principal = CreateUser(("sub", "not-a-guid"), ("login", "   "), ("name", "   "));
+        _userRepoMock.Setup(r => r.GetByLoginAsync("unknown")).ReturnsAsync((UserRecord?)null);
+        _userRepoMock.Setup(r => r.ExistsAsync(It.IsAny<string>())).ReturnsAsync(false);
+
+        _ = await UserIdentityResolver.ResolveOrProvisionUserIdAsync(_adapterMock.Object, principal);
+
+        _userRepoMock.Verify(r => r.AddAsync(It.Is<UserRecord>(u => u.Login == "unknown")), Times.Once);
+    }
+
+    [Fact]
+    public async Task ResolveOrProvisionUserIdAsync_WhenLoginTooLong_TruncatesTo20()
+    {
+        var longLogin = new string('a', 50);
+        var principal = CreateUser(("sub", "not-a-guid"), ("login", longLogin), ("name", "n"));
+        var truncated = longLogin[..20];
+
+        _userRepoMock.Setup(r => r.GetByLoginAsync(truncated)).ReturnsAsync((UserRecord?)null);
+        _userRepoMock.Setup(r => r.ExistsAsync(It.IsAny<string>())).ReturnsAsync(false);
+
+        _ = await UserIdentityResolver.ResolveOrProvisionUserIdAsync(_adapterMock.Object, principal);
+
+        _userRepoMock.Verify(r => r.AddAsync(It.Is<UserRecord>(u => u.Login == truncated)), Times.Once);
+    }
+
+    [Fact]
     public async Task ResolveOrProvisionUserIdAsync_WhenUserDoesNotExist_ProvisionsNewUser()
     {
         var principal = CreateUser(("sub", "newuser"), ("name", "New User"));
@@ -103,5 +156,17 @@ public sealed class UserIdentityResolverTests
         var act = async () => await UserIdentityResolver.ResolveOrProvisionUserIdAsync(mongoAdapter.Object, principal);
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>().WithMessage("*Phase 1 user migration*");
+    }
+
+    [Fact]
+    public async Task ResolveOrProvisionUserIdAsync_MongoAdapter_WhenLoginMissing_ThrowsUnauthorized()
+    {
+        var mongoAdapter = new Mock<MongoDbAdapter>(new Mock<MongoDbContext>("mongodb://localhost:27017", "sd3").Object);
+        mongoAdapter.Setup(a => a.Users).Returns(_userRepoMock.Object);
+
+        var principal = new ClaimsPrincipal(new ClaimsIdentity()); // no NameIdentifier/sub/name
+        var act = async () => await UserIdentityResolver.ResolveOrProvisionUserIdAsync(mongoAdapter.Object, principal);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>().WithMessage("*identity not found*");
     }
 }

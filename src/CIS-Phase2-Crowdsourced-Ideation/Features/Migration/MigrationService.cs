@@ -2,6 +2,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using MySqlConnector;
 using Dapper;
+using System.Data.Common;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Features.Migration;
 
@@ -48,7 +49,11 @@ public sealed class MigrationService : IMigrationService
     {
         await using var mysql = new MySqlConnection(_mysqlConnectionString);
         await mysql.OpenAsync();
+        return await RunAsync(mysql);
+    }
 
+    internal async Task<MigrationResult> RunAsync(DbConnection mysql)
+    {
         var missingUsers = await ValidateMissingUsersAsync(mysql);
         if (missingUsers.Count > 0)
             throw new InvalidOperationException(
@@ -65,7 +70,7 @@ public sealed class MigrationService : IMigrationService
     }
 
 
-    public async Task<IReadOnlyList<string>> ValidateMissingUsersAsync(MySqlConnection mysql)
+    public async Task<IReadOnlyList<string>> ValidateMissingUsersAsync(DbConnection mysql)
     {
         var referencedIds = new HashSet<string>();
         foreach (var id in await mysql.QueryAsync<string>("SELECT DISTINCT owner_id FROM topics"))
@@ -78,35 +83,67 @@ public sealed class MigrationService : IMigrationService
         if (referencedIds.Count == 0)
             return Array.Empty<string>();
 
-        var existing = await _mongoDatabase.GetCollection<BsonDocument>("users")
-            .Find(Builders<BsonDocument>.Filter.In("_id", referencedIds))
-            .Project(Builders<BsonDocument>.Projection.Include("_id"))
-            .ToListAsync();
+        var users = _mongoDatabase.GetCollection<BsonDocument>("users");
+        var filter = Builders<BsonDocument>.Filter.In("_id", referencedIds);
+        var options = new FindOptions<BsonDocument, BsonDocument>
+        {
+            Projection = Builders<BsonDocument>.Projection.Include("_id")
+        };
+        var cursor = await users.FindAsync(filter, options);
+        var existing = await ToListAsync(cursor);
 
         var existingIds = existing.Select(d => d["_id"].AsString).ToHashSet();
         return referencedIds.Where(id => !existingIds.Contains(id)).ToList();
     }
 
-    private async Task<long> MigrateTopicsAsync(MySqlConnection mysql)
+    private sealed class TopicRow
     {
-        var rows = await mysql.QueryAsync<dynamic>(
+        public string id { get; set; } = string.Empty;
+        public string title { get; set; } = string.Empty;
+        public string? description { get; set; }
+        public string status { get; set; } = string.Empty;
+        public string owner_id { get; set; } = string.Empty;
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+    }
+
+    private sealed class IdeaRow
+    {
+        public string id { get; set; } = string.Empty;
+        public string topic_id { get; set; } = string.Empty;
+        public string owner_id { get; set; } = string.Empty;
+        public string content { get; set; } = string.Empty;
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+    }
+
+    private sealed class VoteRow
+    {
+        public string id { get; set; } = string.Empty;
+        public string idea_id { get; set; } = string.Empty;
+        public string user_id { get; set; } = string.Empty;
+    }
+
+    private async Task<long> MigrateTopicsAsync(DbConnection mysql)
+    {
+        var rows = await mysql.QueryAsync<TopicRow>(
             "SELECT id, title, description, status, owner_id, created_at, updated_at FROM topics");
         var collection = _mongoDatabase.GetCollection<BsonDocument>("topics");
         long count = 0;
         foreach (var row in rows)
         {
-            var filter = Builders<BsonDocument>.Filter.Eq("_id", (string)row.id);
+            var filter = Builders<BsonDocument>.Filter.Eq("_id", row.id);
             var doc = new BsonDocument
             {
-                ["_id"]         = (string)row.id,
-                ["Title"]       = (string)row.title,
+                ["_id"]         = row.id,
+                ["Title"]       = row.title,
                 ["Description"] = row.description is null
                     ? BsonNull.Value
-                    : (BsonValue)(string)row.description,
-                ["Status"]      = (string)row.status,
-                ["OwnerId"]     = (string)row.owner_id,
-                ["CreatedAt"]   = (DateTime)row.created_at,
-                ["UpdatedAt"]   = (DateTime)row.updated_at
+                    : (BsonValue)row.description,
+                ["Status"]      = row.status,
+                ["OwnerId"]     = row.owner_id,
+                ["CreatedAt"]   = row.created_at,
+                ["UpdatedAt"]   = row.updated_at
             };
             await collection.ReplaceOneAsync(filter, doc, new ReplaceOptions { IsUpsert = true });
             count++;
@@ -114,23 +151,23 @@ public sealed class MigrationService : IMigrationService
         return count;
     }
 
-    private async Task<long> MigrateIdeasAsync(MySqlConnection mysql)
+    private async Task<long> MigrateIdeasAsync(DbConnection mysql)
     {
-        var rows = await mysql.QueryAsync<dynamic>(
+        var rows = await mysql.QueryAsync<IdeaRow>(
             "SELECT id, topic_id, owner_id, content, created_at, updated_at FROM ideas");
         var collection = _mongoDatabase.GetCollection<BsonDocument>("ideas");
         long count = 0;
         foreach (var row in rows)
         {
-            var filter = Builders<BsonDocument>.Filter.Eq("_id", (string)row.id);
+            var filter = Builders<BsonDocument>.Filter.Eq("_id", row.id);
             var doc = new BsonDocument
             {
-                ["_id"]       = (string)row.id,
-                ["TopicId"]   = (string)row.topic_id,
-                ["OwnerId"]   = (string)row.owner_id,
-                ["Content"]   = (string)row.content,
-                ["CreatedAt"] = (DateTime)row.created_at,
-                ["UpdatedAt"] = (DateTime)row.updated_at
+                ["_id"]       = row.id,
+                ["TopicId"]   = row.topic_id,
+                ["OwnerId"]   = row.owner_id,
+                ["Content"]   = row.content,
+                ["CreatedAt"] = row.created_at,
+                ["UpdatedAt"] = row.updated_at
             };
             await collection.ReplaceOneAsync(filter, doc, new ReplaceOptions { IsUpsert = true });
             count++;
@@ -138,19 +175,19 @@ public sealed class MigrationService : IMigrationService
         return count;
     }
 
-    private async Task<long> MigrateVotesAsync(MySqlConnection mysql)
+    private async Task<long> MigrateVotesAsync(DbConnection mysql)
     {
-        var rows = await mysql.QueryAsync<dynamic>("SELECT id, idea_id, user_id FROM votes");
+        var rows = await mysql.QueryAsync<VoteRow>("SELECT id, idea_id, user_id FROM votes");
         var collection = _mongoDatabase.GetCollection<BsonDocument>("votes");
         long count = 0;
         foreach (var row in rows)
         {
-            var filter = Builders<BsonDocument>.Filter.Eq("_id", (string)row.id);
+            var filter = Builders<BsonDocument>.Filter.Eq("_id", row.id);
             var doc = new BsonDocument
             {
-                ["_id"]    = (string)row.id,
-                ["IdeaId"] = (string)row.idea_id,
-                ["UserId"] = (string)row.user_id
+                ["_id"]    = row.id,
+                ["IdeaId"] = row.idea_id,
+                ["UserId"] = row.user_id
             };
             await collection.ReplaceOneAsync(filter, doc, new ReplaceOptions { IsUpsert = true });
             count++;
@@ -158,7 +195,7 @@ public sealed class MigrationService : IMigrationService
         return count;
     }
 
-    public async Task<ValidationResult> ValidateAsync(MySqlConnection mysql)
+    public async Task<ValidationResult> ValidateAsync(DbConnection mysql)
     {
         var mTopics = await mysql.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM topics");
         var mIdeas  = await mysql.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM ideas");
@@ -173,6 +210,17 @@ public sealed class MigrationService : IMigrationService
             Topics: new CountPair(mTopics, mgTopics),
             Ideas:  new CountPair(mIdeas,  mgIdeas),
             Votes:  new CountPair(mVotes,  mgVotes));
+    }
+
+    private static async Task<List<T>> ToListAsync<T>(IAsyncCursor<T> cursor, CancellationToken ct = default)
+    {
+        var items = new List<T>();
+        while (await cursor.MoveNextAsync(ct))
+        {
+            if (cursor.Current is null) continue;
+            items.AddRange(cursor.Current);
+        }
+        return items;
     }
 }
 

@@ -1,6 +1,7 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using System.Linq;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Repositories;
 
@@ -10,7 +11,8 @@ public class MongoUserRepository(MongoDbContext context) : IUserRepository
 
     public async Task<UserRecord?> GetByIdAsync(string id)
     {
-        return await _collection.Find(u => u.Id == id).FirstOrDefaultAsync();
+        var cursor = await _collection.FindAsync(u => u.Id == id);
+        return await FirstOrDefaultAsync(cursor);
     }
 
     public async Task<UserRecord?> GetByLoginAsync(string login)
@@ -27,10 +29,13 @@ public class MongoUserRepository(MongoDbContext context) : IUserRepository
             .Include("Name").Include("name")
             .Include("Password").Include("password");
 
-        var doc = await _collection
-            .Find(filter)
-            .Project<BsonDocument>(projection)
-            .FirstOrDefaultAsync();
+        var options = new FindOptions<UserRecord, BsonDocument>
+        {
+            Projection = projection
+        };
+
+        var cursor = await _collection.FindAsync(filter, options);
+        var doc = await FirstOrDefaultAsync(cursor);
 
         if (doc is null)
             return null;
@@ -72,7 +77,8 @@ public class MongoUserRepository(MongoDbContext context) : IUserRepository
 
     public async Task<IEnumerable<UserRecord>> GetAllAsync()
     {
-        return await _collection.Find(_ => true).ToListAsync();
+        var cursor = await _collection.FindAsync(_ => true);
+        return await ToListAsync(cursor);
     }
 
     public async Task AddAsync(UserRecord user)
@@ -92,11 +98,30 @@ public class MongoUserRepository(MongoDbContext context) : IUserRepository
 
     public async Task<bool> ExistsAsync(string id)
     {
-        return await _collection.Find(u => u.Id == id).AnyAsync();
+        var count = await _collection.CountDocumentsAsync(u => u.Id == id);
+        return count > 0;
     }
 
     public async Task<int> CountAsync()
     {
         return (int)await _collection.CountDocumentsAsync(_ => true);
+    }
+
+    private static async Task<T?> FirstOrDefaultAsync<T>(IAsyncCursor<T> cursor, CancellationToken ct = default)
+    {
+        if (await cursor.MoveNextAsync(ct) && cursor.Current != null)
+            return cursor.Current.FirstOrDefault();
+        return default;
+    }
+
+    private static async Task<List<T>> ToListAsync<T>(IAsyncCursor<T> cursor, CancellationToken ct = default)
+    {
+        var items = new List<T>();
+        while (await cursor.MoveNextAsync(ct))
+        {
+            if (cursor.Current is null) continue;
+            items.AddRange(cursor.Current);
+        }
+        return items;
     }
 }
