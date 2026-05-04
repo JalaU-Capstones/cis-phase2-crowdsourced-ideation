@@ -96,7 +96,8 @@ public sealed class MigrationService : IMigrationService
         return referencedIds.Where(id => !existingIds.Contains(id)).ToList();
     }
 
-    private sealed class TopicRow
+    // Row DTOs are internal so unit tests can mock Dapper calls without Testcontainers.
+    public sealed class TopicRow
     {
         public string id { get; set; } = string.Empty;
         public string title { get; set; } = string.Empty;
@@ -107,7 +108,7 @@ public sealed class MigrationService : IMigrationService
         public DateTime updated_at { get; set; }
     }
 
-    private sealed class IdeaRow
+    public sealed class IdeaRow
     {
         public string id { get; set; } = string.Empty;
         public string topic_id { get; set; } = string.Empty;
@@ -117,7 +118,7 @@ public sealed class MigrationService : IMigrationService
         public DateTime updated_at { get; set; }
     }
 
-    private sealed class VoteRow
+    public sealed class VoteRow
     {
         public string id { get; set; } = string.Empty;
         public string idea_id { get; set; } = string.Empty;

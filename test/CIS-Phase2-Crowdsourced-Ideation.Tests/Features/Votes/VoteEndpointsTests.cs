@@ -9,6 +9,7 @@ using CIS_Phase2_Crowdsourced_Ideation.Features.Votes;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
 
@@ -24,6 +25,10 @@ public sealed class VoteEndpointsTests
     {
         var http = new DefaultHttpContext();
         http.Items["RepositoryAdapter"] = adapter;
+        http.Response.Body = new MemoryStream();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        http.RequestServices = services.BuildServiceProvider();
         return http;
     }
 
@@ -33,6 +38,12 @@ public sealed class VoteEndpointsTests
     private static int StatusCodeOf(IResult result) =>
         (result as IStatusCodeHttpResult)?.StatusCode
         ?? throw new InvalidOperationException($"Result type {result.GetType().Name} does not expose a status code.");
+
+    private static async Task<int> ExecuteStatusAsync(IResult result, DefaultHttpContext http)
+    {
+        await result.ExecuteAsync(http);
+        return http.Response.StatusCode;
+    }
 
     [Fact]
     public async Task HandleCastVote_WhenUnauthenticated_Returns401()
@@ -106,5 +117,24 @@ public sealed class VoteEndpointsTests
         })!;
 
         StatusCodeOf(result).Should().Be(StatusCodes.Status409Conflict);
+    }
+
+    [Fact]
+    public async Task HandleGetVoteById_WhenMissing_Returns404()
+    {
+        var adapter = new Mock<IRepositoryAdapter>();
+        adapter.Setup(a => a.Votes).Returns(Mock.Of<IVoteRepository>());
+        adapter.Setup(a => a.Ideas).Returns(Mock.Of<IIdeaRepository>());
+        adapter.Setup(a => a.Topics).Returns(Mock.Of<ITopicRepository>());
+        adapter.Setup(a => a.Users).Returns(Mock.Of<IUserRepository>());
+
+        var http = HttpWithAdapter(adapter.Object);
+        var method = InternalMethod("HandleGetVoteById");
+        var task = (Task)method.Invoke(null, new object?[] { Guid.NewGuid(), http, "v1" })!;
+        await task;
+        var result = ((dynamic)task).Result;
+
+        (result as IResult).Should().NotBeNull();
+        (await ExecuteStatusAsync((IResult)result, http)).Should().Be(StatusCodes.Status404NotFound);
     }
 }

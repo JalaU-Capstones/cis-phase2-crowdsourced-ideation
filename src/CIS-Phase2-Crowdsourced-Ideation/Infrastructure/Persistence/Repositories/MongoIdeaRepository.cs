@@ -1,6 +1,7 @@
 using CIS_Phase2_Crowdsourced_Ideation.Features.Ideas;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
 using MongoDB.Driver;
+using System.Linq;
 
 namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Repositories;
 
@@ -10,17 +11,20 @@ public class MongoIdeaRepository(MongoDbContext context) : IIdeaRepository
 
     public async Task<Idea?> GetByIdAsync(Guid id)
     {
-        return await _collection.Find(i => i.Id == id).FirstOrDefaultAsync();
+        var cursor = await _collection.FindAsync(i => i.Id == id);
+        return await FirstOrDefaultAsync(cursor);
     }
 
     public async Task<IEnumerable<Idea>> GetAllAsync()
     {
-        return await _collection.Find(_ => true).ToListAsync();
+        var cursor = await _collection.FindAsync(_ => true);
+        return await ToListAsync(cursor);
     }
 
     public async Task<IEnumerable<Idea>> GetByTopicIdAsync(string topicId)
     {
-        return await _collection.Find(i => i.TopicId == topicId).ToListAsync();
+        var cursor = await _collection.FindAsync(i => i.TopicId == topicId);
+        return await ToListAsync(cursor);
     }
 
     public async Task AddAsync(Idea idea)
@@ -47,5 +51,23 @@ public class MongoIdeaRepository(MongoDbContext context) : IIdeaRepository
     public async Task<int> CountAsync()
     {
         return (int)await _collection.CountDocumentsAsync(_ => true);
+    }
+
+    private static async Task<T?> FirstOrDefaultAsync<T>(IAsyncCursor<T> cursor, CancellationToken ct = default)
+    {
+        if (await cursor.MoveNextAsync(ct) && cursor.Current != null)
+            return cursor.Current.FirstOrDefault();
+        return default;
+    }
+
+    private static async Task<List<T>> ToListAsync<T>(IAsyncCursor<T> cursor, CancellationToken ct = default)
+    {
+        var items = new List<T>();
+        while (await cursor.MoveNextAsync(ct))
+        {
+            if (cursor.Current is null) continue;
+            items.AddRange(cursor.Current);
+        }
+        return items;
     }
 }

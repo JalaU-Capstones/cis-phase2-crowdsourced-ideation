@@ -165,4 +165,42 @@ public sealed class IdeaEndpointsTests
 
         StatusCodeOf(result).Should().Be(StatusCodes.Status404NotFound);
     }
+
+    [Fact]
+    public async Task CreateIdea_WhenValid_Returns201()
+    {
+        var adapter = new Mock<IRepositoryAdapter>();
+        var topics = new Mock<ITopicRepository>();
+        topics.Setup(t => t.GetByIdAsync("t1")).ReturnsAsync(new Topic { Id = "t1", Status = TopicStatus.OPEN });
+
+        Idea? savedIdea = null;
+        var ideas = new Mock<IIdeaRepository>();
+        ideas.Setup(r => r.AddAsync(It.IsAny<Idea>()))
+            .Callback<Idea>(i => savedIdea = i)
+            .Returns(Task.CompletedTask);
+
+        var users = new Mock<IUserRepository>();
+        users.Setup(u => u.ExistsAsync(It.IsAny<string>())).ReturnsAsync(true);
+
+        adapter.Setup(a => a.Topics).Returns(topics.Object);
+        adapter.Setup(a => a.Ideas).Returns(ideas.Object);
+        adapter.Setup(a => a.Votes).Returns(Mock.Of<IVoteRepository>());
+        adapter.Setup(a => a.Users).Returns(users.Object);
+        adapter.Setup(a => a.SaveChangesAsync()).Returns(Task.CompletedTask);
+
+        var http = HttpWithAdapter(adapter.Object);
+        var user = UserWithSub(Guid.NewGuid());
+
+        var method = PrivateMethod("CreateIdea");
+        var result = await (Task<IResult>)method.Invoke(null, new object?[]
+        {
+            new CreateIdeaRequest("t1", "Title", "Desc"),
+            http,
+            user,
+            "v1"
+        })!;
+
+        StatusCodeOf(result).Should().Be(StatusCodes.Status201Created);
+        savedIdea.Should().NotBeNull();
+    }
 }

@@ -14,6 +14,13 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Migration;
 
 public sealed class MigrationServiceUnitTests
 {
+    private static async Task<T> InvokePrivateAsync<T>(MigrationService sut, string methodName, params object?[] args)
+    {
+        var m = typeof(MigrationService).GetMethod(methodName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        m.Should().NotBeNull();
+        return await (Task<T>)m!.Invoke(sut, args)!;
+    }
+
     [Fact]
     public void Ctor_WhenMySqlConnectionMissing_Throws()
     {
@@ -120,7 +127,102 @@ public sealed class MigrationServiceUnitTests
         result.Should().ContainSingle().Which.Should().Be(referenced[1]);
     }
 
-    // NOTE: Dapper calls for migration row reads are covered by Testcontainers integration tests.
+    [Fact]
+    public async Task MigrateTopicsAsync_WritesDocs_AndCounts()
+    {
+        var mysql = new Mock<DbConnection>();
+        mysql.SetupDapperAsync(c => c.QueryAsync<MigrationService.TopicRow>(It.IsAny<CommandDefinition>()))
+            .ReturnsAsync(new[]
+            {
+                new MigrationService.TopicRow
+                {
+                    id = "t1",
+                    title = "T1",
+                    description = null,
+                    status = "OPEN",
+                    owner_id = "u1",
+                    created_at = new DateTime(2020,1,1),
+                    updated_at = new DateTime(2020,1,2)
+                }
+            });
 
-    // NOTE: MigrationService end-to-end behavior is covered by existing Testcontainers integration tests.
+        var col = new Mock<IMongoCollection<BsonDocument>>();
+        col.Setup(c => c.ReplaceOneAsync(It.IsAny<FilterDefinition<BsonDocument>>(), It.IsAny<BsonDocument>(), It.IsAny<ReplaceOptions>(), default))
+            .ReturnsAsync(Mock.Of<ReplaceOneResult>());
+
+        var mongo = new Mock<IMongoDatabase>();
+        mongo.Setup(m => m.GetCollection<BsonDocument>("topics", null)).Returns(col.Object);
+
+        var sut = new MigrationService("cs", mongo.Object);
+        (await InvokePrivateAsync<long>(sut, "MigrateTopicsAsync", mysql.Object)).Should().Be(1);
+        col.Verify(c => c.ReplaceOneAsync(It.IsAny<FilterDefinition<BsonDocument>>(), It.IsAny<BsonDocument>(), It.IsAny<ReplaceOptions>(), default), Times.Once);
+    }
+
+    [Fact]
+    public async Task MigrateIdeasAsync_WritesDocs_AndCounts()
+    {
+        var mysql = new Mock<DbConnection>();
+        mysql.SetupDapperAsync(c => c.QueryAsync<MigrationService.IdeaRow>(It.IsAny<CommandDefinition>()))
+            .ReturnsAsync(new[]
+            {
+                new MigrationService.IdeaRow
+                {
+                    id = "i1",
+                    topic_id = "t1",
+                    owner_id = "u1",
+                    content = "{}",
+                    created_at = new DateTime(2020,1,1),
+                    updated_at = new DateTime(2020,1,2)
+                }
+            });
+
+        var col = new Mock<IMongoCollection<BsonDocument>>();
+        col.Setup(c => c.ReplaceOneAsync(It.IsAny<FilterDefinition<BsonDocument>>(), It.IsAny<BsonDocument>(), It.IsAny<ReplaceOptions>(), default))
+            .ReturnsAsync(Mock.Of<ReplaceOneResult>());
+
+        var mongo = new Mock<IMongoDatabase>();
+        mongo.Setup(m => m.GetCollection<BsonDocument>("ideas", null)).Returns(col.Object);
+
+        var sut = new MigrationService("cs", mongo.Object);
+        (await InvokePrivateAsync<long>(sut, "MigrateIdeasAsync", mysql.Object)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task MigrateVotesAsync_WritesDocs_AndCounts()
+    {
+        var mysql = new Mock<DbConnection>();
+        mysql.SetupDapperAsync(c => c.QueryAsync<MigrationService.VoteRow>(It.IsAny<CommandDefinition>()))
+            .ReturnsAsync(new[]
+            {
+                new MigrationService.VoteRow { id = "v1", idea_id = "i1", user_id = "u1" }
+            });
+
+        var col = new Mock<IMongoCollection<BsonDocument>>();
+        col.Setup(c => c.ReplaceOneAsync(It.IsAny<FilterDefinition<BsonDocument>>(), It.IsAny<BsonDocument>(), It.IsAny<ReplaceOptions>(), default))
+            .ReturnsAsync(Mock.Of<ReplaceOneResult>());
+
+        var mongo = new Mock<IMongoDatabase>();
+        mongo.Setup(m => m.GetCollection<BsonDocument>("votes", null)).Returns(col.Object);
+
+        var sut = new MigrationService("cs", mongo.Object);
+        (await InvokePrivateAsync<long>(sut, "MigrateVotesAsync", mysql.Object)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WhenMismatch_IsInconsistent()
+    {
+        var mysql = new Mock<DbConnection>();
+        mysql.SetupDapperAsync(c => c.ExecuteScalarAsync<long>(It.IsAny<CommandDefinition>()))
+            .ReturnsAsync(2L);
+
+        var col = new Mock<IMongoCollection<BsonDocument>>();
+        col.Setup(c => c.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty, null, default))
+            .ReturnsAsync(1L);
+
+        var mongo = new Mock<IMongoDatabase>();
+        mongo.Setup(m => m.GetCollection<BsonDocument>(It.IsAny<string>(), null)).Returns(col.Object);
+
+        var sut = new MigrationService("cs", mongo.Object);
+        (await sut.ValidateAsync(mysql.Object)).IsConsistent.Should().BeFalse();
+    }
 }
