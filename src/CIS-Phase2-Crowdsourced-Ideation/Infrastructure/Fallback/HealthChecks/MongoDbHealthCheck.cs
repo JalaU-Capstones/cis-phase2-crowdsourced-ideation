@@ -8,7 +8,7 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.HealthChecks;
 /// Health check that probes MongoDB connectivity using a <c>ping</c> command.
 /// </summary>
 public sealed class MongoDbHealthCheck(IMongoClientFactory clientFactory, ILogger<MongoDbHealthCheck> logger)
-    : IHealthCheck
+    : IMongoDbHealthCheck
 {
     /// <inheritdoc />
     public async Task<HealthCheckResult> CheckHealthAsync(

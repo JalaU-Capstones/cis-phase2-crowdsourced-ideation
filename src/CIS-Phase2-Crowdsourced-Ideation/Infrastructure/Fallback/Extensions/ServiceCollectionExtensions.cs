@@ -26,8 +26,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMySqlConnectionFactory, MySqlConnectionFactory>();
         services.AddSingleton<IMongoClientFactory, MongoClientFactory>();
 
-        services.AddSingleton<MySqlHealthCheck>();
-        services.AddSingleton<MongoDbHealthCheck>();
+        services.AddSingleton<IMySqlHealthCheck, MySqlHealthCheck>();
+        services.AddSingleton<IMongoDbHealthCheck, MongoDbHealthCheck>();
         services.AddHostedService<DatabaseHealthMonitor>();
 
         services.AddSingleton<IDatabaseFallbackService, DatabaseFallbackService>();

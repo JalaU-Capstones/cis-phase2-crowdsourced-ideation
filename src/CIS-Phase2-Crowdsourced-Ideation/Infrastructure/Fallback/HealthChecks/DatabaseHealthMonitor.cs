@@ -11,8 +11,8 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.HealthChecks;
 /// </summary>
 public sealed class DatabaseHealthMonitor(
     HealthStatusCache cache,
-    MySqlHealthCheck mySqlHealthCheck,
-    MongoDbHealthCheck mongoDbHealthCheck,
+    IMySqlHealthCheck mySqlHealthCheck,
+    IMongoDbHealthCheck mongoDbHealthCheck,
     IOptions<FallbackOptions> options,
     ILogger<DatabaseHealthMonitor> logger) : BackgroundService
 {

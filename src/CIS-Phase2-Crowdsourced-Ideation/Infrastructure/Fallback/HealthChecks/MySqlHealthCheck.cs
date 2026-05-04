@@ -7,7 +7,7 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.HealthChecks;
 /// Health check that probes MySQL connectivity using a simple <c>SELECT 1</c>.
 /// </summary>
 public sealed class MySqlHealthCheck(IMySqlConnectionFactory connectionFactory, ILogger<MySqlHealthCheck> logger)
-    : IHealthCheck
+    : IMySqlHealthCheck
 {
     /// <inheritdoc />
     public async Task<HealthCheckResult> CheckHealthAsync(
