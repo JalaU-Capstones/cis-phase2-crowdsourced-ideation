@@ -2,6 +2,7 @@ using CIS.Phase2.CrowdsourcedIdeation.Features;
 using CIS.Phase2.CrowdsourcedIdeation.Features.Migration;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure;
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Middleware;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.Middleware;
 using Microsoft.AspNetCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);

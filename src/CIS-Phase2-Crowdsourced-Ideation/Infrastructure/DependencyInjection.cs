@@ -1,5 +1,5 @@
 using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence;
-using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Persistence.Adapters;
+using CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
