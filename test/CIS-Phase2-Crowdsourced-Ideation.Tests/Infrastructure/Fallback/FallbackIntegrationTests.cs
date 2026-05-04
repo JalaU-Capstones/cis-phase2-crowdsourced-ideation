@@ -22,32 +22,38 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Infrastructure.Fallback;
 /// </summary>
 [Collection("Docker")]
 [Trait("Category", "DockerRequired")]
-public sealed class FallbackIntegrationTests : IAsyncLifetime
+public sealed class FallbackIntegrationTests(DockerFixture fixture) : IAsyncLifetime
 {
-    private readonly MySqlContainer _mysql = new MySqlBuilder()
-        .WithDatabase("sd3")
-        .WithUsername("sd3user")
-        .WithPassword("sd3pass")
-        .WithImage("mysql:8.0")
-        .Build();
-
-    private readonly MongoDbContainer _mongo = new MongoDbBuilder()
-        .WithImage("mongo:6.0")
-        .Build();
-
-    private string MysqlConnStr => _mysql.GetConnectionString();
-    private string MongoConnStr => _mongo.GetConnectionString();
+    private string MysqlConnStr => fixture.MySql.GetConnectionString();
+    private string MongoConnStr => fixture.Mongo.GetConnectionString();
 
     public async Task InitializeAsync()
     {
-        await Task.WhenAll(_mysql.StartAsync(), _mongo.StartAsync());
+        // Ensure containers are running (in case a previous test stopped them)
+        if (fixture.MySql.State != DotNet.Testcontainers.Containers.TestcontainersStates.Running)
+            await fixture.MySql.StartAsync();
+        if (fixture.Mongo.State != DotNet.Testcontainers.Containers.TestcontainersStates.Running)
+            await fixture.Mongo.StartAsync();
+
         await CreateMySqlSchemaAndSeedAsync();
+        await CleanMongoCollectionsAsync();
     }
 
-    public async Task DisposeAsync()
+    private async Task CleanMongoCollectionsAsync()
     {
-        await Task.WhenAll(_mysql.StopAsync(), _mongo.StopAsync());
+        var client = new MongoDB.Driver.MongoClient(MongoConnStr);
+        var db = client.GetDatabase("sd3");
+        var collections = await db.ListCollectionNamesAsync();
+        while (await collections.MoveNextAsync())
+        {
+            foreach (var name in collections.Current)
+            {
+                await db.DropCollectionAsync(name);
+            }
+        }
     }
+
+    public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
     public async Task WhenMongoDown_V2ReadsFallbackToMySql_V2WritesBlocked_V1StillWorks()
@@ -56,27 +62,34 @@ public sealed class FallbackIntegrationTests : IAsyncLifetime
         var client = factory.CreateClient();
 
         // Stop MongoDB to force V2 fallback to MySQL.
-        await _mongo.StopAsync();
-        await WaitForFallbackWriteBlockAsync(client, "/api/v2/topics");
+        await fixture.Mongo.StopAsync();
+        try
+        {
+            await WaitForFallbackWriteBlockAsync(client, "/api/v2/topics");
 
-        await WaitFor503Or200Async(client, "/api/v2/topics/", expect503: false);
+            await WaitFor503Or200Async(client, "/api/v2/topics/", expect503: false);
 
-        // V2 read should still work (served from MySQL via fallback adapter).
-        var v2Get = await client.GetAsync("/api/v2/topics/");
-        var v2Body = await v2Get.Content.ReadAsStringAsync();
-        v2Get.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {v2Body}");
-        v2Body.Should().Contain("Fallback Topic");
+            // V2 read should still work (served from MySQL via fallback adapter).
+            var v2Get = await client.GetAsync("/api/v2/topics/");
+            var v2Body = await v2Get.Content.ReadAsStringAsync();
+            v2Get.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {v2Body}");
+            v2Body.Should().Contain("Fallback Topic");
 
-        // V2 write should be blocked with the maintenance message (503).
-        var v2Post = await PostAsAuthedAsync(client, "/api/v2/topics");
-        v2Post.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-        (await v2Post.Content.ReadAsStringAsync())
-            .Should().Contain("Our system is currently undergoing planned maintenance.");
+            // V2 write should be blocked with the maintenance message (503).
+            var v2Post = await PostAsAuthedAsync(client, "/api/v2/topics");
+            v2Post.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await v2Post.Content.ReadAsStringAsync())
+                .Should().Contain("Our system is currently undergoing planned maintenance.");
 
-        // V1 read should work normally since MySQL is up.
-        var v1Get = await client.GetAsync("/api/v1/topics/");
-        v1Get.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await v1Get.Content.ReadAsStringAsync()).Should().Contain("Fallback Topic");
+            // V1 read should work normally since MySQL is up.
+            var v1Get = await client.GetAsync("/api/v1/topics/");
+            v1Get.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await v1Get.Content.ReadAsStringAsync()).Should().Contain("Fallback Topic");
+        }
+        finally
+        {
+            await fixture.Mongo.StartAsync();
+        }
     }
 
     [Fact]
@@ -86,24 +99,31 @@ public sealed class FallbackIntegrationTests : IAsyncLifetime
         var client = factory.CreateClient();
 
         // Stop MySQL to force V1 fallback to MongoDB.
-        await _mysql.StopAsync();
-        await WaitForFallbackWriteBlockAsync(client, "/api/v1/topics");
-        await WaitFor503Or200Async(client, "/api/v1/topics/", expect503: false);
+        await fixture.MySql.StopAsync();
+        try
+        {
+            await WaitForFallbackWriteBlockAsync(client, "/api/v1/topics");
+            await WaitFor503Or200Async(client, "/api/v1/topics/", expect503: false);
 
-        // V1 read should still work (served from MongoDB via fallback adapter).
-        var v1Get = await client.GetAsync("/api/v1/topics/");
-        var v1Body = await v1Get.Content.ReadAsStringAsync();
-        v1Get.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {v1Body}");
+            // V1 read should still work (served from MongoDB via fallback adapter).
+            var v1Get = await client.GetAsync("/api/v1/topics/");
+            var v1Body = await v1Get.Content.ReadAsStringAsync();
+            v1Get.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {v1Body}");
 
-        // V1 write should be blocked with the maintenance message (503).
-        var v1Post = await PostAsAuthedAsync(client, "/api/v1/topics");
-        v1Post.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-        (await v1Post.Content.ReadAsStringAsync())
-            .Should().Contain("Our system is currently undergoing planned maintenance.");
+            // V1 write should be blocked with the maintenance message (503).
+            var v1Post = await PostAsAuthedAsync(client, "/api/v1/topics");
+            v1Post.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await v1Post.Content.ReadAsStringAsync())
+                .Should().Contain("Our system is currently undergoing planned maintenance.");
 
-        // V2 read should work normally since MongoDB is up and is the default for V2.
-        var v2Get = await client.GetAsync("/api/v2/topics/");
-        v2Get.StatusCode.Should().Be(HttpStatusCode.OK);
+            // V2 read should work normally since MongoDB is up and is the default for V2.
+            var v2Get = await client.GetAsync("/api/v2/topics/");
+            v2Get.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await fixture.MySql.StartAsync();
+        }
     }
 
     [Fact]
@@ -112,13 +132,21 @@ public sealed class FallbackIntegrationTests : IAsyncLifetime
         await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
-        await Task.WhenAll(_mongo.StopAsync(), _mysql.StopAsync());
-        await WaitFor503Or200Async(client, "/api/v1/topics/", expect503: true);
+        await fixture.Mongo.StopAsync();
+        await fixture.MySql.StopAsync();
+        try
+        {
+            await WaitFor503Or200Async(client, "/api/v1/topics/", expect503: true);
 
-        var res = await client.GetAsync("/api/v1/topics/");
-        res.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-        (await res.Content.ReadAsStringAsync())
-            .Should().Contain("Please try again later. Our maintenance team is working to resolve this issue.");
+            var res = await client.GetAsync("/api/v1/topics/");
+            res.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await res.Content.ReadAsStringAsync())
+                .Should().Contain("Please try again later. Our maintenance team is working to resolve this issue.");
+        }
+        finally
+        {
+            await Task.WhenAll(fixture.Mongo.StartAsync(), fixture.MySql.StartAsync());
+        }
     }
 
     private static async Task WaitFor503Or200Async(HttpClient client, string path, bool expect503)
@@ -257,6 +285,13 @@ public sealed class FallbackIntegrationTests : IAsyncLifetime
                                   idea_id VARCHAR(36) NOT NULL,
                                   user_id VARCHAR(36) NOT NULL
                               );
+
+                              SET FOREIGN_KEY_CHECKS = 0;
+                              TRUNCATE TABLE votes;
+                              TRUNCATE TABLE ideas;
+                              TRUNCATE TABLE topics;
+                              TRUNCATE TABLE users;
+                              SET FOREIGN_KEY_CHECKS = 1;
                               """;
             await cmd.ExecuteNonQueryAsync();
         }

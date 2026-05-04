@@ -23,32 +23,37 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Tests.Features.Migration;
 /// </summary>
 [Collection("Docker")]
 [Trait("Category", "DockerRequired")]
-public sealed class MigrationServiceTests : IAsyncLifetime
+public sealed class MigrationServiceTests(DockerFixture fixture) : IAsyncLifetime
 {
-    private readonly MySqlContainer _mysql = new MySqlBuilder()
-        .WithDatabase("sd3")
-        .WithUsername("sd3user")
-        .WithPassword("sd3pass")
-        .WithImage("mysql:8.0")
-        .Build();
-
-    private readonly MongoDbContainer _mongo = new MongoDbBuilder()
-        .WithImage("mongo:6.0")
-        .Build();
-
-    private string MysqlConnStr => _mysql.GetConnectionString();
-    private string MongoConnStr => _mongo.GetConnectionString();
+    private string MysqlConnStr => fixture.MySql.GetConnectionString();
+    private string MongoConnStr => fixture.Mongo.GetConnectionString();
 
     public async Task InitializeAsync()
     {
-        await Task.WhenAll(_mysql.StartAsync(), _mongo.StartAsync());
+        // Ensure containers are running
+        if (fixture.MySql.State != DotNet.Testcontainers.Containers.TestcontainersStates.Running)
+            await fixture.MySql.StartAsync();
+        if (fixture.Mongo.State != DotNet.Testcontainers.Containers.TestcontainersStates.Running)
+            await fixture.Mongo.StartAsync();
+
         await CreateMySqlSchemaAsync();
+        await CleanMongoCollectionsAsync();
     }
 
-    public async Task DisposeAsync()
+    private async Task CleanMongoCollectionsAsync()
     {
-        await Task.WhenAll(_mysql.StopAsync(), _mongo.StopAsync());
+        var db = GetMongoDb();
+        var collections = await db.ListCollectionNamesAsync();
+        while (await collections.MoveNextAsync())
+        {
+            foreach (var name in collections.Current)
+            {
+                await db.DropCollectionAsync(name);
+            }
+        }
     }
+
+    public Task DisposeAsync() => Task.CompletedTask;
 
     // ---------------------------------------------------------------------------
     // Schema + seed helpers
@@ -87,6 +92,13 @@ public sealed class MigrationServiceTests : IAsyncLifetime
                 idea_id VARCHAR(36) NOT NULL,
                 user_id VARCHAR(36) NOT NULL
             );
+
+            SET FOREIGN_KEY_CHECKS = 0;
+            TRUNCATE TABLE votes;
+            TRUNCATE TABLE ideas;
+            TRUNCATE TABLE topics;
+            TRUNCATE TABLE users;
+            SET FOREIGN_KEY_CHECKS = 1;
             """);
     }
 

@@ -111,6 +111,42 @@ public sealed class FallbackAdapterTests
             .WithMessage("Both databases are down.");
     }
 
+    [Fact]
+    public void UnsupportedDatabaseType_ThrowsInvalidOperation()
+    {
+        var mySql = new StubAdapter(new Mock<ITopicRepository>().Object);
+        var mongo = new StubAdapter(new Mock<ITopicRepository>().Object);
+        var fallback = new Mock<CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.IDatabaseFallbackService>();
+        fallback.Setup(f => f.GetActiveDatabase(It.IsAny<string>())).Returns((DatabaseType)999);
+
+        var http = new DefaultHttpContext();
+        http.Request.Path = "/api/v1/topics";
+        var accessor = new HttpContextAccessor { HttpContext = http };
+        using var services = BuildServices(mySql, mongo);
+        var sut = new FallbackAdapter(services, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
+
+        var act = () => _ = sut.Topics;
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Unsupported database type*");
+    }
+
+    [Fact]
+    public async Task SaveChangesAsync_DelegatesToActive()
+    {
+        var mySql = new StubAdapter(new Mock<ITopicRepository>().Object);
+        var mongo = new StubAdapter(new Mock<ITopicRepository>().Object);
+        var fallback = new Mock<CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.IDatabaseFallbackService>();
+        fallback.Setup(f => f.GetActiveDatabase(It.IsAny<string>())).Returns(DatabaseType.MySql);
+
+        var http = new DefaultHttpContext();
+        var accessor = new HttpContextAccessor { HttpContext = http };
+        using var services = BuildServices(mySql, mongo);
+        var sut = new FallbackAdapter(services, fallback.Object, accessor, NullLogger<FallbackAdapter>.Instance);
+
+        await sut.SaveChangesAsync();
+        mySql.SaveChangesCalls.Should().Be(1);
+    }
+
     private sealed class StubAdapter(ITopicRepository topics) : IRepositoryAdapter
     {
         public int SaveChangesCalls { get; private set; }

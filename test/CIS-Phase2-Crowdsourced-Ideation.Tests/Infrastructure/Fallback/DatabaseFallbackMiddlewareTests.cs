@@ -95,4 +95,25 @@ public sealed class DatabaseFallbackMiddlewareTests
         await middleware.InvokeAsync(ctx);
         called.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task WhenDisabled_AlwaysAllowsPipeline()
+    {
+        var fallback = new Mock<CIS.Phase2.CrowdsourcedIdeation.Infrastructure.Fallback.IDatabaseFallbackService>();
+        fallback.Setup(f => f.GetActiveDatabase(It.IsAny<string>())).Returns(DatabaseType.BothDown);
+
+        var called = false;
+        var middleware = new DatabaseFallbackMiddleware(
+            _ => { called = true; return Task.CompletedTask; },
+            fallback.Object,
+            Options.Create(new FallbackOptions { Enabled = false }),
+            NullLogger<DatabaseFallbackMiddleware>.Instance);
+
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Method = HttpMethods.Post;
+        ctx.Request.Path = "/api/v1/topics";
+
+        await middleware.InvokeAsync(ctx);
+        called.Should().BeTrue();
+    }
 }

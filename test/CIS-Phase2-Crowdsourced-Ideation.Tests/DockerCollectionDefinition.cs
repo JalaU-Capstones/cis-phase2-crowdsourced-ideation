@@ -7,5 +7,5 @@ namespace CIS.Phase2.CrowdsourcedIdeation.Tests;
 /// This reduces flakiness caused by Docker resource contention (ports/CPU/IO).
 /// </summary>
 [CollectionDefinition("Docker", DisableParallelization = true)]
-public sealed class DockerCollectionDefinition;
+public sealed class DockerCollectionDefinition : ICollectionFixture<DockerFixture>;
 
